@@ -6,6 +6,7 @@ from datetime import datetime
 from sqlalchemy import delete, select, tuple_, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy.sql.elements import ColumnElement
 
 from framegen.api.idempotency import (
     KEPT_FOR,
@@ -98,11 +99,13 @@ class PostgresIdempotencyStore:
         except Exception:
             log.exception("could not delete expired idempotency keys")
 
-    async def complete(self, scope: str, key: str, response: StoredResponse) -> None:
+    async def complete(
+        self, scope: str, key: str, started: datetime, response: StoredResponse
+    ) -> None:
         async with self._engine.begin() as conn:
             await conn.execute(
                 update(t)
-                .where(t.c.scope == scope, t.c.key == key)
+                .where(*_held_by(scope, key, started))
                 .values(
                     status_code=response.status_code,
                     response_headers=[list(pair) for pair in response.headers],
@@ -110,6 +113,16 @@ class PostgresIdempotencyStore:
                 )
             )
 
-    async def release(self, scope: str, key: str) -> None:
+    async def release(self, scope: str, key: str, started: datetime) -> None:
         async with self._engine.begin() as conn:
-            await conn.execute(delete(t).where(t.c.scope == scope, t.c.key == key))
+            await conn.execute(delete(t).where(*_held_by(scope, key, started)))
+
+
+def _held_by(scope: str, key: str, started: datetime) -> tuple[ColumnElement[bool], ...]:
+    """The key, only while the run that began at ``started`` still holds it unfinished."""
+    return (
+        t.c.scope == scope,
+        t.c.key == key,
+        t.c.created_at == started,
+        t.c.status_code.is_(None),
+    )

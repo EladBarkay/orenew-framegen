@@ -12,7 +12,7 @@ from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -92,13 +92,21 @@ def install_error_handlers(app: FastAPI) -> None:
         )
 
     @app.exception_handler(StarletteHTTPException)
-    async def http_error(request: Request, error: StarletteHTTPException) -> JSONResponse:
-        code = _HTTP_CODES.get(error.status_code, "http_error")
-        message = (
-            error.detail if isinstance(error.detail, str) else HTTPStatus(error.status_code).phrase
-        )
+    async def http_error(request: Request, error: StarletteHTTPException) -> Response:
+        status = error.status_code
+        if status in (204, 304) or status < 200:
+            # These answers must not have a body.
+            return Response(status_code=status, headers=error.headers)
+        code = _HTTP_CODES.get(status, "http_error")
+        if isinstance(error.detail, str):
+            message = error.detail
+        else:
+            try:
+                message = HTTPStatus(status).phrase
+            except ValueError:  # a status Python has no name for, such as 499
+                message = "Request failed."
         # Keep the framework's headers, such as Allow on 405.
-        return error_response(error.status_code, code, message, headers=error.headers)
+        return error_response(status, code, message, headers=error.headers)
 
     @app.exception_handler(Exception)
     async def unexpected_error(request: Request, error: Exception) -> JSONResponse:

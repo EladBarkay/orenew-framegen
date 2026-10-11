@@ -12,6 +12,7 @@ the first response back (marked ``Idempotent-Replayed: true``) without running a
 - Keys are remembered for 24 hours.
 """
 
+import asyncio
 import hashlib
 import logging
 from collections.abc import Awaitable, Callable, MutableMapping
@@ -76,11 +77,17 @@ BeginResult = Started | Replay | InProgress | Mismatch
 
 
 class IdempotencyStore(Protocol):
+    """``started`` is the ``now`` given to the ``begin`` that returned Started. ``complete`` and
+    ``release`` only touch the key while that run still holds it: a run so slow that a repeat
+    took the key over (after LOCK_TIMEOUT) must not overwrite or drop the repeat's claim."""
+
     async def begin(self, scope: str, key: str, fingerprint: str, now: datetime) -> BeginResult: ...
 
-    async def complete(self, scope: str, key: str, response: StoredResponse) -> None: ...
+    async def complete(
+        self, scope: str, key: str, started: datetime, response: StoredResponse
+    ) -> None: ...
 
-    async def release(self, scope: str, key: str) -> None: ...
+    async def release(self, scope: str, key: str, started: datetime) -> None: ...
 
 
 @dataclass
@@ -111,11 +118,17 @@ class MemoryIdempotencyStore:
             return Started()
         return InProgress()
 
-    async def complete(self, scope: str, key: str, response: StoredResponse) -> None:
-        self.entries[(scope, key)].response = response
+    async def complete(
+        self, scope: str, key: str, started: datetime, response: StoredResponse
+    ) -> None:
+        entry = self.entries.get((scope, key))
+        if entry is not None and entry.started_at == started and entry.response is None:
+            entry.response = response
 
-    async def release(self, scope: str, key: str) -> None:
-        self.entries.pop((scope, key), None)
+    async def release(self, scope: str, key: str, started: datetime) -> None:
+        entry = self.entries.get((scope, key))
+        if entry is not None and entry.started_at == started and entry.response is None:
+            del self.entries[(scope, key)]
 
 
 def _valid_key(raw: bytes) -> str | None:
@@ -165,22 +178,27 @@ class IdempotencyMiddleware:
             await answer(503, "idempotency_unavailable", "Idempotency-Key cannot be honoured now.")
             return
 
-        body = b""
+        parts: list[bytes] = []
+        size = 0
         more = True
         while more:
             message = await receive()
             if message["type"] == "http.disconnect":
                 return
-            body += message.get("body", b"")
+            part = message.get("body", b"")
+            parts.append(part)
+            size += len(part)
             more = message.get("more_body", False)
-            if len(body) > MAX_BODY_BYTES:
+            if size > MAX_BODY_BYTES:
                 await answer(413, "payload_too_large", "The request body is too large.")
                 return
+        body = b"".join(parts)
 
         owner = "anonymous"  # who sent it; accounts arrive in T-06
         method, path = scope["method"], scope["path"]
+        now = datetime.now(UTC)
         result = await store.begin(
-            owner, key, fingerprint(method, path, scope["query_string"], body), datetime.now(UTC)
+            owner, key, fingerprint(method, path, scope["query_string"], body), now
         )
         if isinstance(result, Mismatch):
             await answer(
@@ -198,17 +216,10 @@ class IdempotencyMiddleware:
             await _send_stored(result.response, send)
             return
 
-        await self._run_first(scope, body, receive, send, store, owner, key)
+        await self._run_first(scope, body, receive, send, _Claim(store, owner, key, now))
 
     async def _run_first(
-        self,
-        scope: Scope,
-        body: bytes,
-        receive: Receive,
-        send: Send,
-        store: IdempotencyStore,
-        owner: str,
-        key: str,
+        self, scope: Scope, body: bytes, receive: Receive, send: Send, claim: "_Claim"
     ) -> None:
         delivered = False
 
@@ -239,7 +250,7 @@ class IdempotencyMiddleware:
                 chunks.append(message.get("body", b""))
                 if not message.get("more_body", False):
                     answered = True
-                    await self._finish(status, headers, b"".join(chunks), send, store, owner, key)
+                    await _finish(status, headers, b"".join(chunks), send, claim)
 
         try:
             await self.app(scope, replay_body, capture)
@@ -247,48 +258,66 @@ class IdempotencyMiddleware:
             # Failing after the answer was sent (a background task) leaves the key done: the
             # request's effects already happened and a retry must not repeat them.
             if not answered:
-                await _release_quietly(store, owner, key)
+                await claim.release()
             raise
         if not answered:
-            await _release_quietly(store, owner, key)
-
-    @staticmethod
-    async def _finish(
-        status: int,
-        headers: list[tuple[bytes, bytes]],
-        body: bytes,
-        send: Send,
-        store: IdempotencyStore,
-        owner: str,
-        key: str,
-    ) -> None:
-        stored = StoredResponse(
-            status_code=status,
-            headers=[
-                (name.decode("latin-1"), value.decode("latin-1"))
-                for name, value in headers
-                if name.lower() not in (b"content-length", b"set-cookie")
-            ],
-            body=body,
-        )
-        if remembered(status):
-            try:
-                await store.complete(owner, key, stored)
-            except Exception:
-                # The work is done, so the client still gets its answer. The key stays
-                # unfinished; a repeat is refused as in progress until LOCK_TIMEOUT passes.
-                log.exception("could not remember the answer for an idempotency key")
-        else:
-            await _release_quietly(store, owner, key)
-        await _send_stored(stored, send, replayed=False)
+            await claim.release()
 
 
-async def _release_quietly(store: IdempotencyStore, owner: str, key: str) -> None:
-    try:
-        await store.release(owner, key)
-    except Exception:
-        # The key stays unfinished; a repeat may run once LOCK_TIMEOUT passes.
-        log.exception("could not release an idempotency key")
+@dataclass(frozen=True)
+class _Claim:
+    """The key this request holds, from ``begin`` until it is completed or released."""
+
+    store: IdempotencyStore
+    owner: str
+    key: str
+    started: datetime
+
+    async def complete(self, response: StoredResponse) -> None:
+        try:
+            await self.store.complete(self.owner, self.key, self.started, response)
+        except Exception:
+            # The work is done, so the client still gets its answer. The key stays
+            # unfinished; a repeat is refused as in progress until LOCK_TIMEOUT passes.
+            log.exception("could not remember the answer for an idempotency key")
+
+    async def release(self) -> None:
+        # Runs as its own task: when the request is being cancelled (client gone, shutdown),
+        # the key is still freed, or every retry would be refused until LOCK_TIMEOUT.
+        task = asyncio.ensure_future(self._release())
+        _releasing.add(task)
+        task.add_done_callback(_releasing.discard)
+        await asyncio.shield(task)
+
+    async def _release(self) -> None:
+        try:
+            await self.store.release(self.owner, self.key, self.started)
+        except Exception:
+            # The key stays unfinished; a repeat may run once LOCK_TIMEOUT passes.
+            log.exception("could not release an idempotency key")
+
+
+_releasing: set["asyncio.Future[None]"] = set()
+"""Keeps release tasks alive after the request that started them was cancelled."""
+
+
+async def _finish(
+    status: int, headers: list[tuple[bytes, bytes]], body: bytes, send: Send, claim: _Claim
+) -> None:
+    stored = StoredResponse(
+        status_code=status,
+        headers=[
+            (name.decode("latin-1"), value.decode("latin-1"))
+            for name, value in headers
+            if name.lower() not in (b"content-length", b"set-cookie")
+        ],
+        body=body,
+    )
+    if remembered(status):
+        await claim.complete(stored)
+    else:
+        await claim.release()
+    await _send_stored(stored, send, replayed=False)
 
 
 async def _send_stored(response: StoredResponse, send: Send, replayed: bool = True) -> None:

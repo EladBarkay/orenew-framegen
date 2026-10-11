@@ -77,15 +77,19 @@ def test_store_follows_the_idempotency_rules(settings: Settings) -> None:
             assert await store.begin("me", "a", "f1", now) == Started()
             assert await store.begin("me", "a", "f1", now) == InProgress()
             assert await store.begin("me", "a", "f2", now) == Mismatch()
-            await store.complete("me", "a", response)
+            await store.complete("me", "a", now, response)
             assert await store.begin("me", "a", "f1", now) == Replay(response)
             # Keys belong to whoever sent them.
             assert await store.begin("someone-else", "a", "f2", now) == Started()
             # A first run that never finished may be taken over after the lock times out.
             assert await store.begin("me", "b", "f", now) == Started()
             assert await store.begin("me", "b", "f", now + LOCK_TIMEOUT) == Started()
+            # The slow first run lost the key: it can no longer release or complete it.
+            await store.release("me", "b", now)
+            await store.complete("me", "b", now, response)
+            assert await store.begin("me", "b", "f", now + LOCK_TIMEOUT) == InProgress()
             # A released key (server error) starts over.
-            await store.release("me", "b")
+            await store.release("me", "b", now + LOCK_TIMEOUT)
             assert await store.begin("me", "b", "g", now) == Started()
             # An expired key is new again.
             assert await store.begin("me", "a", "f3", now + KEPT_FOR) == Started()
@@ -142,11 +146,11 @@ def test_a_key_released_during_begin_starts_over(settings: Settings) -> None:
                 await store.begin("me", "churn", "f", now)
                 # Repeats race with the first request being released.
                 outcome = await asyncio.gather(
-                    store.release("me", "churn"),
+                    store.release("me", "churn", now),
                     *(store.begin("me", "churn", "f", now) for _ in range(4)),
                 )
                 results.extend(outcome[1:])
-                await store.release("me", "churn")
+                await store.release("me", "churn", now)
             return results
         finally:
             await engine.dispose()

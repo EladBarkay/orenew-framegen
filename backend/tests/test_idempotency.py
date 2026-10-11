@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 
@@ -14,8 +15,10 @@ from framegen.api.idempotency import (
     LOCK_TIMEOUT,
     InProgress,
     MemoryIdempotencyStore,
+    Replay,
     Started,
     StoredResponse,
+    _Claim,
 )
 
 
@@ -190,7 +193,9 @@ def test_a_failing_background_task_keeps_the_key_done() -> None:
 
 
 class StoreThatCannotSave(MemoryIdempotencyStore):
-    async def complete(self, scope: str, key: str, response: StoredResponse) -> None:
+    async def complete(
+        self, scope: str, key: str, started: datetime, response: StoredResponse
+    ) -> None:
         raise ConnectionError("database went away")
 
 
@@ -199,3 +204,44 @@ def test_the_client_gets_its_answer_even_if_it_cannot_be_remembered() -> None:
     with TestClient(app_counting_calls(calls, StoreThatCannotSave())) as client:
         response = client.post("/v1/orders", json={"size": 4}, headers={"Idempotency-Key": "k"})
     assert (response.status_code, response.json()) == (201, {"id": 1, "size": 4})
+
+
+def test_a_run_that_lost_its_key_cannot_touch_the_new_holder() -> None:
+    store = MemoryIdempotencyStore()
+    now = datetime.now(UTC)
+    later = now + LOCK_TIMEOUT
+    answer = StoredResponse(201, [], b"late")
+
+    async def scenario() -> None:
+        await store.begin("s", "k", "f", now)
+        # The first run is so slow that a repeat takes the key over.
+        assert await store.begin("s", "k", "f", later) == Started()
+        await store.release("s", "k", now)
+        await store.complete("s", "k", now, answer)
+        assert await store.begin("s", "k", "f", later) == InProgress()
+        await store.complete("s", "k", later, answer)
+        assert await store.begin("s", "k", "f", later) == Replay(answer)
+
+    asyncio.run(scenario())
+
+
+def test_a_cancelled_request_still_frees_its_key() -> None:
+    store = MemoryIdempotencyStore()
+    now = datetime.now(UTC)
+
+    class SlowToRelease(MemoryIdempotencyStore):
+        async def release(self, scope: str, key: str, started: datetime) -> None:
+            await asyncio.sleep(0.05)
+            await store.release(scope, key, started)
+
+    async def scenario() -> None:
+        await store.begin("s", "k", "f", now)
+        task = asyncio.create_task(_Claim(SlowToRelease(), "s", "k", now).release())
+        await asyncio.sleep(0.01)
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+        await asyncio.sleep(0.1)
+        assert ("s", "k") not in store.entries
+
+    asyncio.run(scenario())

@@ -38,7 +38,8 @@ def encode_cursor(position: dict[str, Any]) -> str:
 def decode_cursor(cursor: str) -> dict[str, Any]:
     try:
         padded = cursor + "=" * (-len(cursor) % 4)
-        position = json.loads(base64.urlsafe_b64decode(padded.encode()))
+        # validate=True: characters outside the alphabet are an error, not silently skipped.
+        position = json.loads(base64.b64decode(padded, altchars=b"-_", validate=True))
     except (binascii.Error, ValueError, UnicodeDecodeError) as error:
         raise ApiError(400, "invalid_cursor", "The cursor is not valid.") from error
     if not isinstance(position, dict):

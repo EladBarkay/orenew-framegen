@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import BaseModel
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from framegen.api.app import create_app
 from framegen.api.errors import ApiError
@@ -22,6 +23,10 @@ def app_with_routes() -> FastAPI:
     @app.get("/v1/things/{thing_id}")
     def get(thing_id: str) -> Thing:
         raise ApiError(404, "thing_not_found", "No such thing.", {"thing_id": thing_id})
+
+    @app.get("/v1/odd/{status}")
+    def odd(status: int) -> None:
+        raise StarletteHTTPException(status)
 
     @app.get("/v1/broken")
     def broken() -> None:
@@ -83,3 +88,12 @@ def test_openapi_documents_the_error_format() -> None:
     assert "ErrorResponse" in document["components"]["schemas"]
     default = document["paths"]["/v1/health"]["get"]["responses"]["default"]
     assert default["content"]["application/json"]["schema"]["$ref"].endswith("/ErrorResponse")
+
+
+def test_unusual_statuses_are_answered_cleanly() -> None:
+    with TestClient(app_with_routes()) as client:
+        unnamed = client.get("/v1/odd/499")
+        not_modified = client.get("/v1/odd/304")
+    assert unnamed.status_code == 499
+    assert unnamed.json()["error"]["code"] == "http_error"
+    assert (not_modified.status_code, not_modified.content) == (304, b"")
