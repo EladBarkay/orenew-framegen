@@ -1,7 +1,9 @@
 import asyncio
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 
-from fastapi import FastAPI
+from fastapi import BackgroundTasks, FastAPI
+from fastapi.responses import StreamingResponse
 from fastapi.testclient import TestClient
 from pydantic import BaseModel
 
@@ -13,6 +15,7 @@ from framegen.api.idempotency import (
     InProgress,
     MemoryIdempotencyStore,
     Started,
+    StoredResponse,
 )
 
 
@@ -32,6 +35,32 @@ def app_counting_calls(calls: list[int], store: MemoryIdempotencyStore) -> FastA
     def flaky() -> None:
         calls.append(0)
         raise ApiError(503, "storage_unavailable", "Try again.")
+
+    @app.post("/v1/busy")
+    def busy() -> None:
+        calls.append(0)
+        raise ApiError(429, "too_many_requests", "Slow down.")
+
+    @app.post("/v1/stream")
+    def stream() -> StreamingResponse:
+        calls.append(0)
+
+        async def parts() -> AsyncIterator[bytes]:
+            for part in (b"one,", b"two,", b"three"):
+                await asyncio.sleep(0.01)
+                yield part
+
+        return StreamingResponse(parts(), media_type="text/plain")
+
+    @app.post("/v1/with-follow-up")
+    def with_follow_up(tasks: BackgroundTasks) -> dict[str, bool]:
+        calls.append(0)
+
+        def follow_up() -> None:
+            raise RuntimeError("follow-up failed")
+
+        tasks.add_task(follow_up)
+        return {"done": True}
 
     return app
 
@@ -129,3 +158,44 @@ def test_store_rules_for_expiry_and_crashed_requests() -> None:
         assert await store.begin("s", "k", "other", now + KEPT_FOR + LOCK_TIMEOUT) == Started()
 
     asyncio.run(scenario())
+
+
+def test_retry_later_answers_are_not_remembered() -> None:
+    calls: list[int] = []
+    with TestClient(app_counting_calls(calls, MemoryIdempotencyStore())) as client:
+        client.post("/v1/busy", headers={"Idempotency-Key": "k"})
+        response = client.post("/v1/busy", headers={"Idempotency-Key": "k"})
+    assert calls == [0, 0]
+    assert response.status_code == 429
+
+
+def test_a_streamed_answer_arrives_whole_and_is_replayed() -> None:
+    calls: list[int] = []
+    with TestClient(app_counting_calls(calls, MemoryIdempotencyStore())) as client:
+        first = client.post("/v1/stream", headers={"Idempotency-Key": "k"})
+        again = client.post("/v1/stream", headers={"Idempotency-Key": "k"})
+    assert first.text == again.text == "one,two,three"
+    assert calls == [0]
+
+
+def test_a_failing_background_task_keeps_the_key_done() -> None:
+    calls: list[int] = []
+    app = app_counting_calls(calls, MemoryIdempotencyStore())
+    with TestClient(app, raise_server_exceptions=False) as client:
+        first = client.post("/v1/with-follow-up", headers={"Idempotency-Key": "k"})
+        again = client.post("/v1/with-follow-up", headers={"Idempotency-Key": "k"})
+    assert (first.status_code, first.json()) == (200, {"done": True})
+    assert again.headers["Idempotent-Replayed"] == "true"
+    assert calls == [0]
+
+
+class StoreThatCannotSave(MemoryIdempotencyStore):
+    async def complete(self, scope: str, key: str, response: StoredResponse) -> None:
+        raise ConnectionError("database went away")
+
+
+def test_the_client_gets_its_answer_even_if_it_cannot_be_remembered() -> None:
+    calls: list[int] = []
+    with TestClient(app_counting_calls(calls, StoreThatCannotSave())) as client:
+        response = client.post("/v1/orders", json={"size": 4}, headers={"Idempotency-Key": "k"})
+    assert (response.status_code, response.json()) == (201, {"id": 1, "size": 4})

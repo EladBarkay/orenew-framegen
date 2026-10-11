@@ -6,6 +6,7 @@ an English hint for developers; ``detail`` carries structured extra facts or is 
 """
 
 import logging
+from collections.abc import Mapping
 from http import HTTPStatus
 from typing import Any
 
@@ -46,10 +47,14 @@ class ApiError(Exception):
 
 
 def error_response(
-    status: int, code: str, message: str, detail: dict[str, Any] | None = None
+    status: int,
+    code: str,
+    message: str,
+    detail: dict[str, Any] | None = None,
+    headers: Mapping[str, str] | None = None,
 ) -> JSONResponse:
     body = ErrorResponse(error=ErrorBody(code=code, message=message, detail=detail))
-    return JSONResponse(status_code=status, content=body.model_dump())
+    return JSONResponse(status_code=status, content=body.model_dump(), headers=headers)
 
 
 # Codes for errors the framework raises before our code runs.
@@ -92,7 +97,8 @@ def install_error_handlers(app: FastAPI) -> None:
         message = (
             error.detail if isinstance(error.detail, str) else HTTPStatus(error.status_code).phrase
         )
-        return error_response(error.status_code, code, message)
+        # Keep the framework's headers, such as Allow on 405.
+        return error_response(error.status_code, code, message, headers=error.headers)
 
     @app.exception_handler(Exception)
     async def unexpected_error(request: Request, error: Exception) -> JSONResponse:

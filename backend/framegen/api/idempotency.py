@@ -7,7 +7,8 @@ the first response back (marked ``Idempotent-Replayed: true``) without running a
 - The same key with a different request is refused (422 ``idempotency_key_reused``).
 - A repeat that arrives while the first is still running is refused
   (409 ``idempotency_key_in_progress``); the client retries a little later.
-- Server errors (5xx) are not remembered, so the client can retry them.
+- Answers that mean "try again" are not remembered, so the client can retry them: server
+  errors (5xx), 408 Request Timeout, 409 Conflict and 429 Too Many Requests.
 - Keys are remembered for 24 hours.
 """
 
@@ -36,6 +37,12 @@ LOCK_TIMEOUT = timedelta(minutes=2)
 """A first request still unfinished after this is taken to have crashed; a repeat may run."""
 MAX_BODY_BYTES = 10 * 1024 * 1024
 """Large files never pass through the API (pre-signed uploads), so bodies are small."""
+NOT_REMEMBERED = {408, 409, 429}
+"""Besides 5xx: answers that ask the client to retry, so a retry must run again."""
+
+
+def remembered(status: int) -> bool:
+    return status < 500 and status not in NOT_REMEMBERED
 
 
 @dataclass(frozen=True)
@@ -191,38 +198,70 @@ class IdempotencyMiddleware:
             await _send_stored(result.response, send)
             return
 
-        await self._run_first(scope, body, send, store, owner, key)
+        await self._run_first(scope, body, receive, send, store, owner, key)
 
     async def _run_first(
-        self, scope: Scope, body: bytes, send: Send, store: IdempotencyStore, owner: str, key: str
+        self,
+        scope: Scope,
+        body: bytes,
+        receive: Receive,
+        send: Send,
+        store: IdempotencyStore,
+        owner: str,
+        key: str,
     ) -> None:
         delivered = False
 
         async def replay_body() -> Message:
+            # The body was already read; hand it over once, then pass the real channel on so
+            # the app still learns when the client disconnects.
             nonlocal delivered
             if delivered:
-                return {"type": "http.disconnect"}
+                return await receive()
             delivered = True
             return {"type": "http.request", "body": body, "more_body": False}
 
         status = 500
         headers: list[tuple[bytes, bytes]] = []
         chunks: list[bytes] = []
+        answered = False
 
         async def capture(message: Message) -> None:
-            nonlocal status, headers
+            # The answer is collected whole, remembered, and only then sent, so a repeat can
+            # never see a key that is done but has no answer yet.
+            nonlocal status, headers, answered
+            if answered:
+                return
             if message["type"] == "http.response.start":
                 status = message["status"]
                 headers = list(message.get("headers", []))
             elif message["type"] == "http.response.body":
                 chunks.append(message.get("body", b""))
+                if not message.get("more_body", False):
+                    answered = True
+                    await self._finish(status, headers, b"".join(chunks), send, store, owner, key)
 
         try:
             await self.app(scope, replay_body, capture)
         except BaseException:
-            await store.release(owner, key)
+            # Failing after the answer was sent (a background task) leaves the key done: the
+            # request's effects already happened and a retry must not repeat them.
+            if not answered:
+                await _release_quietly(store, owner, key)
             raise
+        if not answered:
+            await _release_quietly(store, owner, key)
 
+    @staticmethod
+    async def _finish(
+        status: int,
+        headers: list[tuple[bytes, bytes]],
+        body: bytes,
+        send: Send,
+        store: IdempotencyStore,
+        owner: str,
+        key: str,
+    ) -> None:
         stored = StoredResponse(
             status_code=status,
             headers=[
@@ -230,13 +269,26 @@ class IdempotencyMiddleware:
                 for name, value in headers
                 if name.lower() not in (b"content-length", b"set-cookie")
             ],
-            body=b"".join(chunks),
+            body=body,
         )
-        if status >= 500:
-            await store.release(owner, key)
+        if remembered(status):
+            try:
+                await store.complete(owner, key, stored)
+            except Exception:
+                # The work is done, so the client still gets its answer. The key stays
+                # unfinished; a repeat is refused as in progress until LOCK_TIMEOUT passes.
+                log.exception("could not remember the answer for an idempotency key")
         else:
-            await store.complete(owner, key, stored)
+            await _release_quietly(store, owner, key)
         await _send_stored(stored, send, replayed=False)
+
+
+async def _release_quietly(store: IdempotencyStore, owner: str, key: str) -> None:
+    try:
+        await store.release(owner, key)
+    except Exception:
+        # The key stays unfinished; a repeat may run once LOCK_TIMEOUT passes.
+        log.exception("could not release an idempotency key")
 
 
 async def _send_stored(response: StoredResponse, send: Send, replayed: bool = True) -> None:

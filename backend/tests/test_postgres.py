@@ -110,3 +110,46 @@ def test_concurrent_first_requests_start_only_once(settings: Settings) -> None:
     results = asyncio.run(scenario())
     assert results.count(Started()) == 1
     assert results.count(InProgress()) == 7
+
+
+def test_expired_keys_are_deleted_when_new_keys_arrive(settings: Settings) -> None:
+    async def scenario() -> int:
+        engine = async_engine(settings)
+        store = PostgresIdempotencyStore(engine)
+        now = datetime.now(UTC) + timedelta(days=10)
+        try:
+            await store.begin("me", "old", "f", now - KEPT_FOR - timedelta(seconds=1))
+            await store.begin("me", "new", "f", now)
+            async with engine.connect() as conn:
+                found = await conn.execute(
+                    text("SELECT count(*) FROM idempotency_keys WHERE key = 'old'")
+                )
+                return int(found.scalar_one())
+        finally:
+            await engine.dispose()
+
+    assert asyncio.run(scenario()) == 0
+
+
+def test_a_key_released_during_begin_starts_over(settings: Settings) -> None:
+    async def scenario() -> list[object]:
+        engine = async_engine(settings)
+        store = PostgresIdempotencyStore(engine)
+        now = datetime.now(UTC) + timedelta(days=20)
+        try:
+            results: list[object] = []
+            for _ in range(20):
+                await store.begin("me", "churn", "f", now)
+                # Repeats race with the first request being released.
+                outcome = await asyncio.gather(
+                    store.release("me", "churn"),
+                    *(store.begin("me", "churn", "f", now) for _ in range(4)),
+                )
+                results.extend(outcome[1:])
+                await store.release("me", "churn")
+            return results
+        finally:
+            await engine.dispose()
+
+    results = asyncio.run(scenario())
+    assert set(results) <= {Started(), InProgress()}

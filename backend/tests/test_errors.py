@@ -44,6 +44,7 @@ def test_wrong_method_has_a_code() -> None:
         response = client.delete("/v1/health")
     assert response.status_code == 405
     assert response.json()["error"]["code"] == "method_not_allowed"
+    assert response.headers["Allow"] == "GET"
 
 
 def test_validation_errors_list_each_problem() -> None:
