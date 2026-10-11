@@ -1,6 +1,7 @@
 import logging
 from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
+from typing import Literal
 
 from fastapi import FastAPI, Request, Response, status
 from pydantic import BaseModel
@@ -12,13 +13,13 @@ from framegen.settings import get_settings
 
 
 class Health(BaseModel):
-    status: str
+    status: Literal["ok"]
     version: str
 
 
 class ReadinessReport(BaseModel):
-    status: str
-    checks: dict[str, str]
+    status: Literal["ready", "unavailable"]
+    checks: dict[str, Literal["ok", "unavailable"]]
 
 
 def configure_logging() -> None:

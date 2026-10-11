@@ -142,9 +142,11 @@ services:
       interval: 2s
       timeout: 5s
       retries: 30
+    # Only started, not healthy: the app and its pages are served even when the API cannot
+    # start; /v1 then answers 502.
     depends_on:
       api:
-        condition: service_healthy
+        condition: service_started
     restart: unless-stopped
 
 volumes:

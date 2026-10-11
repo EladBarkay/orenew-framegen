@@ -30,8 +30,11 @@ export interface components {
     schemas: {
         /** Health */
         Health: {
-            /** Status */
-            status: string;
+            /**
+             * Status
+             * @constant
+             */
+            status: "ok";
             /** Version */
             version: string;
         };

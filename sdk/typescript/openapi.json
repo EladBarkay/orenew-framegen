@@ -4,6 +4,7 @@
       "Health": {
         "properties": {
           "status": {
+            "const": "ok",
             "title": "Status",
             "type": "string"
           },

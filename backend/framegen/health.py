@@ -5,6 +5,7 @@ import logging
 import threading
 from collections.abc import Callable, Mapping
 from concurrent.futures import Future
+from typing import Literal
 
 import psycopg
 
@@ -50,7 +51,8 @@ def default_checks(settings: Settings) -> dict[str, Check]:
     return {"database": database_check(settings), "storage": storage_check(settings)}
 
 
-Outcome = tuple[str, str | None]
+CheckResult = Literal["ok", "unavailable"]
+Outcome = tuple[CheckResult, str | None]
 """("ok", None) or ("unavailable", reason)."""
 
 
@@ -94,17 +96,19 @@ class Readiness:
         self._probes = {name: _Probe(check) for name, check in checks.items()}
         self._deadline = deadline
         # Only the event-loop thread running run() touches this; probe threads never do.
-        self._last: dict[str, str] = {}
+        self._last: dict[str, CheckResult] = {}
 
-    async def run(self) -> dict[str, str]:
+    async def run(self) -> dict[str, CheckResult]:
         runs = {name: probe.current_run() for name, probe in self._probes.items()}
         if runs:
             # asyncio.wait never cancels: a run still going stays shared with later requests.
             await asyncio.wait(
                 [asyncio.wrap_future(run) for run in runs.values()], timeout=self._deadline
             )
-        results: dict[str, str] = {}
+        results: dict[str, CheckResult] = {}
         for name, run in runs.items():
+            result: CheckResult
+            reason: str | None
             if run.done():
                 result, reason = run.result()
             else:
@@ -113,7 +117,7 @@ class Readiness:
             self._report(name, result, reason)
         return results
 
-    def _report(self, name: str, result: str, reason: str | None) -> None:
+    def _report(self, name: str, result: CheckResult, reason: str | None) -> None:
         previous = self._last.get(name)
         self._last[name] = result
         if result == previous:
