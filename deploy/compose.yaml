@@ -7,17 +7,18 @@
 
 name: framegen
 
-x-backend: &backend
-  build:
-    context: ..
-    dockerfile: backend/Dockerfile
+x-backend-environment: &backend-environment
+  FRAMEGEN_DB_HOST: postgres
+  FRAMEGEN_DB_PASSWORD: ${FRAMEGEN_DB_PASSWORD:-framegen-dev}
+  FRAMEGEN_S3_ENDPOINT_URL: http://storage:9000
+  FRAMEGEN_S3_BUCKET: ${FRAMEGEN_S3_BUCKET:-framegen}
+  FRAMEGEN_S3_ACCESS_KEY: ${FRAMEGEN_S3_ACCESS_KEY:-framegen}
+  FRAMEGEN_S3_SECRET_KEY: ${FRAMEGEN_S3_SECRET_KEY:-framegen-dev-secret}
+
+# The backend image is built once, by the api service; storage-init and worker reuse it.
+x-backend-image: &backend-image
   image: framegen-backend:local
-  environment:
-    FRAMEGEN_DATABASE_URL: postgresql://framegen:${FRAMEGEN_DB_PASSWORD:-framegen-dev}@postgres:5432/framegen
-    FRAMEGEN_S3_ENDPOINT_URL: http://storage:9000
-    FRAMEGEN_S3_BUCKET: ${FRAMEGEN_S3_BUCKET:-framegen}
-    FRAMEGEN_S3_ACCESS_KEY: ${FRAMEGEN_S3_ACCESS_KEY:-framegen}
-    FRAMEGEN_S3_SECRET_KEY: ${FRAMEGEN_S3_SECRET_KEY:-framegen-dev-secret}
+  pull_policy: never
 
 services:
   postgres:
@@ -57,7 +58,8 @@ services:
 
   # Creates the bucket on first start, then exits.
   storage-init:
-    <<: *backend
+    <<: *backend-image
+    environment: *backend-environment
     command: [framegen-storage-init]
     depends_on:
       storage:
@@ -65,7 +67,14 @@ services:
     restart: "no"
 
   api:
-    <<: *backend
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
+    image: framegen-backend:local
+    environment:
+      <<: *backend-environment
+      # Only Caddy (web) can reach the API, so trust its X-Forwarded-* headers.
+      FORWARDED_ALLOW_IPS: "*"
     depends_on:
       postgres:
         condition: service_healthy
@@ -85,7 +94,8 @@ services:
     restart: unless-stopped
 
   worker:
-    <<: *backend
+    <<: *backend-image
+    environment: *backend-environment
     command: [framegen-worker]
     depends_on:
       postgres:
@@ -115,6 +125,16 @@ services:
     image: framegen-web:local
     ports:
       - 127.0.0.1:8080:80
+    volumes:
+      # Caddy keeps its HTTPS certificates here (production, T-56).
+      - caddy-data:/data
+      - caddy-config:/config
+    healthcheck:
+      # Caddy's admin endpoint, local to the container; works whatever the site address is.
+      test: [CMD, wget, -qO-, http://localhost:2019/config/]
+      interval: 2s
+      timeout: 5s
+      retries: 30
     depends_on:
       api:
         condition: service_healthy
@@ -123,3 +143,5 @@ services:
 volumes:
   postgres-data:
   storage-data:
+  caddy-data:
+  caddy-config:

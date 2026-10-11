@@ -1,4 +1,5 @@
 from collections.abc import Mapping
+from functools import cache
 
 from fastapi import FastAPI, Response, status
 from pydantic import BaseModel
@@ -20,6 +21,11 @@ class Readiness(BaseModel):
 
 
 def create_app(readiness_checks: Mapping[str, Check] | None = None) -> FastAPI:
+    @cache
+    def checks() -> Mapping[str, Check]:
+        # Built once, on first use, so each readiness call reuses one storage client.
+        return readiness_checks if readiness_checks is not None else default_checks(get_settings())
+
     app = FastAPI(
         title="FrameGen API",
         version=__version__,

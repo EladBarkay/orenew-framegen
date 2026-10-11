@@ -19,7 +19,14 @@ def ensure_bucket(settings: Settings) -> bool:
     except ClientError as error:
         if error.response.get("Error", {}).get("Code") not in ("404", "NoSuchBucket", "NotFound"):
             raise
-    client.create_bucket(Bucket=settings.s3_bucket)
+    if settings.s3_region == "us-east-1":
+        client.create_bucket(Bucket=settings.s3_bucket)
+    else:
+        # S3 servers that check regions require the region to be named.
+        client.create_bucket(
+            Bucket=settings.s3_bucket,
+            CreateBucketConfiguration={"LocationConstraint": settings.s3_region},  # type: ignore[typeddict-item]
+        )
     return True
 
 
