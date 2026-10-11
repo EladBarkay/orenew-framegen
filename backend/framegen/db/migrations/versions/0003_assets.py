@@ -33,7 +33,9 @@ def upgrade() -> None:
         sa.Column("created_by", sa.String(length=40), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("completed_at", sa.DateTime(timezone=True), nullable=True),
-        sa.CheckConstraint("status IN ('pending', 'ready')", name=op.f("ck_assets_status")),
+        sa.CheckConstraint(
+            "status IN ('pending', 'ready', 'rejected')", name=op.f("ck_assets_status")
+        ),
         sa.ForeignKeyConstraint(
             ["created_by"],
             ["users.id"],

@@ -114,7 +114,9 @@ assets = Table(
     # What the file is for: reference, font, stamp or template-source (uploads); piece,
     # render or package (made by FrameGen).
     Column("kind", String(32), nullable=False),
-    # pending until the upload is confirmed, then ready.
+    # pending until the upload is confirmed, then ready. rejected: the upload was not the
+    # declared file; its stored object is deleted, and the row is kept so retention can
+    # also remove anything uploaded again through the still-valid link.
     Column("status", String(16), nullable=False),
     Column("storage_key", String(200), nullable=False, unique=True),
     Column("filename", String(255), nullable=False),
@@ -127,6 +129,6 @@ assets = Table(
     Column("created_by", ID, ForeignKey("users.id", ondelete="SET NULL"), nullable=True),
     Column("created_at", DateTime(timezone=True), nullable=False),
     Column("completed_at", DateTime(timezone=True), nullable=True),
-    CheckConstraint("status IN ('pending', 'ready')", name="status"),
+    CheckConstraint("status IN ('pending', 'ready', 'rejected')", name="status"),
     Index("ix_assets_workspace_id_id", "workspace_id", "id"),
 )

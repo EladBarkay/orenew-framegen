@@ -113,10 +113,21 @@ def test_upload_complete_and_download(client: TestClient) -> None:
     assert [a["id"] for a in listed] == [asset_id]
 
 
-def test_storage_refuses_other_content_than_declared(client: TestClient) -> None:
+def test_storage_refuses_other_content_or_size_than_declared(client: TestClient) -> None:
     workspace_id = workspace(client)
     created = start(client, workspace_id, png()).json()
     assert upload(created, png((121, 80))).status_code == 400
+
+    data = png()
+    declared = {
+        "kind": "reference",
+        "filename": "frame.png",
+        "content_type": "image/png",
+        "size": 10,  # smaller than the file, which has the declared checksum
+        "sha256": hashlib.sha256(data).hexdigest(),
+    }
+    too_small = client.post(f"/v1/workspaces/{workspace_id}/assets", json=declared).json()
+    assert upload(too_small, data).status_code == 403
 
 
 def test_completing_before_uploading(client: TestClient) -> None:

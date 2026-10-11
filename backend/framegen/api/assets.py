@@ -4,7 +4,7 @@ Files go straight from the client to storage; the API never carries them.
 
 1. ``createAsset`` with the file's name, type, size and sha256. The answer has a
    pre-signed ``PUT`` link and the headers to send with it. The link is signed with the
-   sha256, so storage itself refuses any other content.
+   size and sha256, so storage itself refuses any other content.
 2. The client uploads the file to that link.
 3. ``completeAsset``. FrameGen checks that the file arrived and that its first bytes
    really are the declared type, and reads its pixel size. The asset is then ``ready``.
@@ -26,7 +26,7 @@ from urllib.parse import quote
 from botocore.exceptions import ClientError
 from fastapi import APIRouter, Path, Query, Request, status
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import delete, insert, select, update
+from sqlalchemy import insert, select, update
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from framegen.api.access import MemberAccess
@@ -212,6 +212,8 @@ async def create_asset(
             "Bucket": settings.s3_bucket,
             "Key": row["storage_key"],
             "ContentType": body.content_type,
+            # Both signed, so storage refuses any other size or content.
+            "ContentLength": body.size,
             "ChecksumSHA256": checksum,
         },
         ExpiresIn=int(UPLOAD_LINK_LIFETIME.total_seconds()),
@@ -256,17 +258,25 @@ async def complete_asset(
     head, first_bytes = await asyncio.to_thread(inspect)
     if head is None:
         raise ApiError(409, "upload_missing", "The file has not been uploaded yet.")
+
+    async def reject(status_code: int, code: str, message: str) -> ApiError:
+        """Delete the stored file, so it can never be served, and mark the asset rejected.
+        The row stays, so retention also removes anything uploaded again later through the
+        still-valid link."""
+        async with engine.begin() as conn:
+            await conn.execute(
+                update(assets).where(assets.c.id == asset_id).values(status="rejected")
+            )
+        await asyncio.to_thread(storage.delete_object, Bucket=bucket, Key=key)
+        return ApiError(status_code, code, message)
+
     if head.get("ContentLength") != row["size"] or head.get("ChecksumSHA256") != _hex_to_base64(
         row["sha256"]
     ):
-        # Storage checks the signed checksum, so this only happens if it is bypassed.
-        raise ApiError(409, "upload_mismatch", "The uploaded file is not the one declared.")
+        # Storage checks the signed size and checksum, so this only happens if bypassed.
+        raise await reject(409, "upload_mismatch", "The uploaded file is not the one declared.")
     if not TYPES[row["content_type"]].matches(first_bytes):
-        # Not what it claims to be: removed, so it can never be served.
-        await asyncio.to_thread(storage.delete_object, Bucket=bucket, Key=key)
-        async with engine.begin() as conn:
-            await conn.execute(delete(assets).where(assets.c.id == asset_id))
-        raise ApiError(
+        raise await reject(
             422, "not_the_declared_type", "The file's content does not match its declared type."
         )
 
@@ -331,7 +341,11 @@ async def list_assets(
 
 
 async def _find(engine: AsyncEngine, workspace_id: str, asset_id: str) -> Row:
-    query = select(assets).where(assets.c.workspace_id == workspace_id, assets.c.id == asset_id)
+    query = select(assets).where(
+        assets.c.workspace_id == workspace_id,
+        assets.c.id == asset_id,
+        assets.c.status != "rejected",
+    )
     async with engine.connect() as conn:
         row = (await conn.execute(query)).mappings().first()
     if row is None:

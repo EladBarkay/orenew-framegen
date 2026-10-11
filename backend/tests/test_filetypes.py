@@ -132,3 +132,39 @@ def test_avif_is_not_heic() -> None:
 )
 def test_impossible_sizes_are_no_size(content_type: str, data: bytes) -> None:
     assert pixel_size(content_type, reader(data)) is None
+
+
+def test_long_svg_dimensions_take_linear_time() -> None:
+    started = time.monotonic()
+    svg = b'<svg width="' + b"1" * 60_000 + b'x" height="1">'
+    assert pixel_size("image/svg+xml", reader(svg)) is None
+    assert time.monotonic() - started < 1
+
+
+def test_svg_with_an_internal_doctype_subset() -> None:
+    # As Adobe Illustrator writes them.
+    svg = (
+        b'<?xml version="1.0"?>\n<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "x.dtd" [\n'
+        b'  <!ENTITY ns_extend "http://ns.adobe.com/Extensibility/1.0/">\n]>\n'
+        b'<svg version="1.1" width="640px" height="480px">'
+    )
+    assert TYPES["image/svg+xml"].matches(svg)
+    assert pixel_size("image/svg+xml", reader(svg)) == (640, 480)
+
+
+def test_svg_size_comes_from_the_root_not_a_comment() -> None:
+    svg = b'<!-- <svg width="10" height="10"> --><svg width="800" height="600">'
+    assert pixel_size("image/svg+xml", reader(svg)) == (800, 600)
+
+
+@pytest.mark.parametrize(
+    ("mode", "options"),
+    [("RGB", {}), ("RGB", {"lossless": True}), ("RGBA", {}), ("RGBA", {"exif": b"Exif\0\0"})],
+)
+def test_webp_size_from_its_header_alone(mode: str, options: dict[str, object]) -> None:
+    out = io.BytesIO()
+    Image.effect_noise((1500, 1100), 64).convert(mode).save(out, "WEBP", **options)
+    data = out.getvalue()
+    reads: list[tuple[int, int]] = []
+    assert pixel_size("image/webp", reader(data, reads)) == (1500, 1100)
+    assert len(reads) == 1

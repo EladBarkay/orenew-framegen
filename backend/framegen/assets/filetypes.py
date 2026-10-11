@@ -53,11 +53,10 @@ def _is_heif(head: bytes) -> bool:
     return any(brand in _HEIF_BRANDS for brand in brands)
 
 
-_SVG_PROLOG = ((b"<?xml", b"?>"), (b"<!--", b"-->"), (b"<!DOCTYPE", b">"))
-
-
-def _is_svg(head: bytes) -> bool:
-    """The root element is <svg>, after an optional XML declaration, comments and doctype.
+def _svg_root(head: bytes) -> int | None:
+    """Where the root <svg> element starts, after an optional XML declaration, comments and
+    doctype (with or without an internal subset, as Illustrator writes); None if the root is
+    something else.
 
     A plain scan, each step moving forward, so any input is checked in linear time.
     """
@@ -65,16 +64,32 @@ def _is_svg(head: bytes) -> bool:
     while True:
         while position < len(head) and head[position : position + 1].isspace():
             position += 1
-        for opening, closing in _SVG_PROLOG:
-            if head.startswith(opening, position):
-                end = head.find(closing, position + len(opening))
-                if end < 0:
-                    return False
-                position = end + len(closing)
-                break
+        if head.startswith(b"<?xml", position):
+            end = _after(head, b"?>", position)
+        elif head.startswith(b"<!--", position):
+            end = _after(head, b"-->", position)
+        elif head.startswith(b"<!DOCTYPE", position):
+            subset, close = head.find(b"[", position), head.find(b">", position)
+            if 0 <= subset < close or (subset >= 0 and close < 0):
+                end = _after(head, b">", _after(head, b"]", subset) or len(head))
+            else:
+                end = _after(head, b">", position)
         else:
             after = head[position + 4 : position + 5]
-            return head.startswith(b"<svg", position) and (after.isspace() or after in (b">", b"/"))
+            is_svg = head.startswith(b"<svg", position) and (after.isspace() or after in b">/")
+            return position if is_svg and after else None
+        if end is None:
+            return None
+        position = end
+
+
+def _after(head: bytes, marker: bytes, start: int) -> int | None:
+    found = head.find(marker, start)
+    return None if found < 0 else found + len(marker)
+
+
+def _is_svg(head: bytes) -> bool:
+    return _svg_root(head) is not None
 
 
 TYPES: dict[str, FileType] = {
@@ -112,6 +127,9 @@ def pixel_size(content_type: str, read: Callable[[int, int], bytes]) -> tuple[in
         return _plausible(_heif_size(head))
     if content_type == "image/svg+xml":
         return _plausible(_svg_size(head))
+    if content_type == "image/webp":
+        # Pillow would read the whole file; the size is in the first chunk's header.
+        return _plausible(_webp_size(head))
     if TYPES[content_type].family != "image":
         return None
     with warnings.catch_warnings():
@@ -135,24 +153,47 @@ def _heif_size(head: bytes) -> tuple[int, int] | None:
     return max(sizes, key=lambda size: size[0] * size[1]) if sizes else None
 
 
-_SVG_TAG = re.compile(rb"<svg\b[^>]*>", re.S)
+def _webp_size(head: bytes) -> tuple[int, int] | None:
+    chunk = head[12:16]
+    if chunk == b"VP8X" and len(head) >= 30:  # extended: canvas size, minus one
+        return (
+            1 + int.from_bytes(head[24:27], "little"),
+            1 + int.from_bytes(head[27:30], "little"),
+        )
+    if chunk == b"VP8 " and len(head) >= 30 and head[23:26] == b"\x9d\x01\x2a":  # lossy
+        width, height = struct.unpack("<HH", head[26:30])
+        return width & 0x3FFF, height & 0x3FFF
+    if chunk == b"VP8L" and len(head) >= 25 and head[20] == 0x2F:  # lossless
+        bits = int.from_bytes(head[21:25], "little")
+        return (bits & 0x3FFF) + 1, ((bits >> 14) & 0x3FFF) + 1
+    return None
+
+
 _ATTR = re.compile(rb'\s(width|height|viewBox)\s*=\s*["\']([^"\']*)["\']')
-_LENGTH = re.compile(rb"^\s*([0-9]*\.?[0-9]+)\s*(px)?\s*$")
 
 
 def _svg_size(head: bytes) -> tuple[int, int] | None:
-    """From width and height in pixels, else from the viewBox."""
-    tag = _SVG_TAG.search(head)
-    if tag is None:
+    """From the root element's width and height in pixels, else from its viewBox."""
+    start = _svg_root(head)
+    end = head.find(b">", start) if start is not None else -1
+    if start is None or end < 0:
         return None
-    attrs = {name: value for name, value in _ATTR.findall(tag.group())}
-    width, height = (_LENGTH.match(attrs.get(name, b"")) for name in (b"width", b"height"))
+    attrs = {name: value for name, value in _ATTR.findall(head[start : end + 1])}
+    width, height = (_pixels(attrs.get(name, b"")) for name in (b"width", b"height"))
     if width and height:
-        return _whole(width.group(1)), _whole(height.group(1))
+        return width, height
     box = attrs.get(b"viewBox", b"").replace(b",", b" ").split()
     if len(box) == 4:
         return _whole(box[2]), _whole(box[3])
     return None
+
+
+def _pixels(length: bytes) -> int | None:
+    """A length in pixels ("300" or "300px"); None for other units, such as cm or %."""
+    number = length.strip().removesuffix(b"px").strip()
+    if not number or len(number) > 32 or number.strip(b"0123456789.") != b"":
+        return None
+    return _whole(number)
 
 
 def _whole(number: bytes) -> int:
