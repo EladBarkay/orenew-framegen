@@ -7,7 +7,7 @@ decision D2):
 |---|---|---|
 | `web` | Caddy serving the web app, forwarding `/v1` to the API and `/<bucket>/` to the storage | http://localhost:8080 |
 | `api` | FastAPI backend | through `web`, at `/v1` |
-| `worker` | Background jobs (the queue arrives in T-08) | — |
+| `worker` | Runs background jobs from the queue (Procrastinate, in Postgres) | — |
 | `psd-writer` | Internal PSD text-layer service (D8) | inside Compose only |
 | `postgres` | PostgreSQL 17 with pgvector | localhost:5432 |
 | `storage` | RustFS, S3-compatible file storage (D9) | localhost:9000 |

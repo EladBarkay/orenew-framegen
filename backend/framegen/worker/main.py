@@ -1,28 +1,42 @@
-"""Worker entry point. Jobs arrive in T-08; until then the worker starts, waits and stops."""
+"""Worker entry point: runs queued jobs until SIGTERM or SIGINT (DESIGN.md section 9.1).
 
+On a stop signal the worker takes no new jobs and lets running ones finish, for up to
+STOP_GRACE seconds; Procrastinate handles the signals.
+"""
+
+import asyncio
 import logging
-import signal
-from collections.abc import Callable
 
 from framegen import __version__
+from framegen.db.engine import async_engine
+from framegen.jobs import tasks
+from framegen.jobs.queue import queue_app
+from framegen.settings import Settings, get_settings
 
 log = logging.getLogger("framegen.worker")
 
-STOP_SIGNALS = {signal.SIGTERM, signal.SIGINT}
+STOP_GRACE = 30.0
 
 
-def wait_for_stop_signal() -> None:
-    """Blocks, without waking up, until SIGTERM or SIGINT arrives."""
-    signal.pthread_sigmask(signal.SIG_BLOCK, STOP_SIGNALS)
-    signal.sigwait(STOP_SIGNALS)
-
-
-def run(wait_for_stop: Callable[[], None]) -> None:
-    log.info("framegen worker %s started; no job queue yet", __version__)
-    wait_for_stop()
-    log.info("framegen worker stopped")
+async def run(settings: Settings, *, wait: bool = True) -> None:
+    """Runs jobs. With ``wait=False``, returns once the queue is empty (for tests)."""
+    engine = async_engine(settings)
+    tasks.engine = engine
+    app = queue_app(settings)
+    log.info("framegen worker %s started", __version__)
+    try:
+        async with app.open_async():
+            await app.run_worker_async(
+                wait=wait,
+                install_signal_handlers=wait,
+                shutdown_graceful_timeout=STOP_GRACE,
+            )
+    finally:
+        tasks.engine = None
+        await engine.dispose()
+        log.info("framegen worker stopped")
 
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO)
-    run(wait_for_stop_signal)
+    asyncio.run(run(get_settings()))
