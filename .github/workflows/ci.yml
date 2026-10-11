@@ -13,6 +13,20 @@ jobs:
   backend:
     name: Backend (Python)
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.1-pg17
+        env:
+          POSTGRES_USER: framegen
+          POSTGRES_PASSWORD: framegen-dev
+          POSTGRES_DB: framegen
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -U framegen"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
     defaults:
       run:
         working-directory: backend
@@ -28,8 +42,10 @@ jobs:
         run: uv run ruff format --check .
       - name: Type check
         run: uv run mypy
-      - name: Tests
+      - name: Tests (including the Postgres ones)
         run: uv run pytest
+        env:
+          FRAMEGEN_TEST_POSTGRES: "1"
 
   node:
     name: Web, SDK and psd-writer (Node)

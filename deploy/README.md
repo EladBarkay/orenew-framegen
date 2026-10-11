@@ -12,6 +12,7 @@ decision D2):
 | `postgres` | PostgreSQL 17 with pgvector | localhost:5432 |
 | `storage` | RustFS, S3-compatible file storage (D9) | localhost:9000 |
 | `storage-init` | Creates the storage bucket on start, then exits | — |
+| `migrate` | Brings the database schema up to date on start, then exits | — |
 
 ## Running it locally
 

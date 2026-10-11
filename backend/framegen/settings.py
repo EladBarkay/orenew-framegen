@@ -10,6 +10,7 @@ from typing import Literal, Self
 from psycopg.conninfo import make_conninfo
 from pydantic import SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import URL
 
 DEV_DB_PASSWORD = "framegen-dev"
 DEV_S3_SECRET_KEY = "framegen-dev-secret"
@@ -31,6 +32,18 @@ class Settings(BaseSettings):
     s3_bucket: str = "framegen"
     s3_access_key: str = "framegen"
     s3_secret_key: SecretStr = SecretStr(DEV_S3_SECRET_KEY)
+
+    @property
+    def database_url(self) -> URL:
+        """SQLAlchemy URL (psycopg 3 driver). URL.create quotes every part: any password works."""
+        return URL.create(
+            "postgresql+psycopg",
+            username=self.db_user,
+            password=self.db_password.get_secret_value(),
+            host=self.db_host,
+            port=self.db_port,
+            database=self.db_name,
+        )
 
     @model_validator(mode="after")
     def no_development_secrets_in_production(self) -> Self:
