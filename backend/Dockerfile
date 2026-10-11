@@ -22,4 +22,5 @@ COPY --from=build /app/.venv /app/.venv
 ENV PATH=/app/.venv/bin:$PATH PYTHONUNBUFFERED=1
 USER framegen
 EXPOSE 8000
-CMD ["uvicorn", "framegen.api.app:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]
+# X-Forwarded-* headers from Caddy are not trusted yet; T-56 adds that together with HTTPS.
+CMD ["uvicorn", "framegen.api.app:app", "--host", "0.0.0.0", "--port", "8000", "--no-proxy-headers"]

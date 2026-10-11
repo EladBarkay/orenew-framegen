@@ -19,7 +19,7 @@
         "title": "Health",
         "type": "object"
       },
-      "Readiness": {
+      "ReadinessReport": {
         "properties": {
           "checks": {
             "additionalProperties": {
@@ -37,7 +37,7 @@
           "status",
           "checks"
         ],
-        "title": "Readiness",
+        "title": "ReadinessReport",
         "type": "object"
       }
     }
@@ -88,7 +88,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Readiness"
+                  "$ref": "#/components/schemas/ReadinessReport"
                 }
               }
             },
@@ -98,7 +98,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Readiness"
+                  "$ref": "#/components/schemas/ReadinessReport"
                 }
               }
             },

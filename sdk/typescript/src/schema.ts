@@ -55,8 +55,8 @@ export interface components {
             /** Version */
             version: string;
         };
-        /** Readiness */
-        Readiness: {
+        /** ReadinessReport */
+        ReadinessReport: {
             /** Checks */
             checks: {
                 [key: string]: string;
@@ -108,7 +108,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Readiness"];
+                    "application/json": components["schemas"]["ReadinessReport"];
                 };
             };
             /** @description Service Unavailable */
@@ -117,7 +117,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Readiness"];
+                    "application/json": components["schemas"]["ReadinessReport"];
                 };
             };
         };

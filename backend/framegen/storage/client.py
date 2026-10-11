@@ -12,7 +12,13 @@ if TYPE_CHECKING:
     from mypy_boto3_s3 import S3Client
 
 
-def s3_client(settings: Settings) -> S3Client:
+def s3_client(
+    settings: Settings,
+    *,
+    connect_timeout: float = 3,
+    read_timeout: float = 10,
+    max_attempts: int = 2,
+) -> S3Client:
     """An S3 client for the configured storage.
 
     Path-style addressing, because RustFS (D9) needs it. Each client gets its own boto3
@@ -27,8 +33,8 @@ def s3_client(settings: Settings) -> S3Client:
         aws_secret_access_key=settings.s3_secret_key.get_secret_value(),
         config=Config(
             s3={"addressing_style": "path"},
-            retries={"max_attempts": 2},
-            connect_timeout=3,
-            read_timeout=10,
+            retries={"mode": "standard", "max_attempts": max_attempts},
+            connect_timeout=connect_timeout,
+            read_timeout=read_timeout,
         ),
     )

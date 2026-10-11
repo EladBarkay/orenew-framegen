@@ -1,3 +1,4 @@
+import logging
 from collections.abc import Mapping
 from functools import cache
 
@@ -5,7 +6,7 @@ from fastapi import FastAPI, Response, status
 from pydantic import BaseModel
 
 from framegen import __version__
-from framegen.health import Check, default_checks, run_checks
+from framegen.health import Check, Readiness, default_checks
 from framegen.project import LICENSE_ID, SOURCE_URL
 from framegen.settings import get_settings
 
@@ -15,16 +16,19 @@ class Health(BaseModel):
     version: str
 
 
-class Readiness(BaseModel):
+class ReadinessReport(BaseModel):
     status: str
     checks: dict[str, str]
 
 
 def create_app(readiness_checks: Mapping[str, Check] | None = None) -> FastAPI:
     @cache
-    def checks() -> Mapping[str, Check]:
-        # Built once, on first use, so each readiness call reuses one storage client.
-        return readiness_checks if readiness_checks is not None else default_checks(get_settings())
+    def readiness() -> Readiness:
+        # Built once, on first use: the checks and their storage client are reused.
+        checks = (
+            readiness_checks if readiness_checks is not None else default_checks(get_settings())
+        )
+        return Readiness(checks)
 
     app = FastAPI(
         title="FrameGen API",
@@ -52,20 +56,28 @@ def create_app(readiness_checks: Mapping[str, Check] | None = None) -> FastAPI:
         "/v1/health/ready",
         operation_id="getReadiness",
         tags=["system"],
-        responses={503: {"model": Readiness}},
+        responses={503: {"model": ReadinessReport}},
     )
-    def ready(response: Response) -> Readiness:
+    def ready(response: Response) -> ReadinessReport:
         """Readiness: the API can reach the database and storage."""
-        checks = (
-            readiness_checks if readiness_checks is not None else default_checks(get_settings())
-        )
-        results = run_checks(checks)
+        results = readiness().run()
         if all(result == "ok" for result in results.values()):
-            return Readiness(status="ready", checks=results)
+            return ReadinessReport(status="ready", checks=results)
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
-        return Readiness(status="unavailable", checks=results)
+        return ReadinessReport(status="unavailable", checks=results)
 
     return app
 
 
+def configure_logging() -> None:
+    """Show FrameGen's own INFO messages next to uvicorn's (uvicorn only sets up its own)."""
+    logger = logging.getLogger("framegen")
+    if not logger.handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter("%(levelname)s:%(name)s:%(message)s"))
+        logger.addHandler(handler)
+        logger.setLevel(logging.INFO)
+
+
+configure_logging()
 app = create_app()

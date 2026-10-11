@@ -29,9 +29,13 @@ the database and storage.
 - Start from empty: `docker compose -f deploy/compose.yaml down --volumes`.
 - Ports are bound to `127.0.0.1` only.
 
-The passwords and keys in `compose.yaml` are defaults for a developer's own machine.
-They can be overridden with environment variables (`FRAMEGEN_DB_PASSWORD`,
-`FRAMEGEN_S3_ACCESS_KEY`, `FRAMEGEN_S3_SECRET_KEY`). Production (T-56) adds its own
+The names, passwords and keys in `compose.yaml` are defaults for a developer's own
+machine. They can be overridden with environment variables (`FRAMEGEN_DB_NAME`,
+`FRAMEGEN_DB_USER`, `FRAMEGEN_DB_PASSWORD`, `FRAMEGEN_S3_BUCKET`,
+`FRAMEGEN_S3_ACCESS_KEY`, `FRAMEGEN_S3_SECRET_KEY`); each is passed both to the server
+that uses it and to the backend. Postgres takes its user, password and database name only
+when its volume is first created, so after changing one of those, start from empty
+(`down --volumes`). Production (T-56) adds its own
 settings, secrets and HTTPS on top of this file; `web/Caddyfile` already reads
 `FRAMEGEN_SITE_ADDRESS` for that.
 
@@ -48,9 +52,7 @@ x-proxy-build: &proxy-build
   args: { HTTPS_PROXY: http://proxy.example:3128 }
   secrets: [build_ca]
 services:
-  storage-init: { build: *proxy-build }
-  api: { build: *proxy-build }
-  worker: { build: *proxy-build }
+  api: { build: *proxy-build } # builds the backend image; storage-init and worker reuse it
   psd-writer: { build: *proxy-build }
   web: { build: *proxy-build }
 secrets:

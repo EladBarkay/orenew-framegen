@@ -33,9 +33,15 @@ open http://localhost:8080 (see `deploy/README.md`):
 docker compose -f deploy/compose.yaml up --build --wait
 ```
 
-Or run the API and web app directly while developing (the API expects Postgres and
-storage, which you can start alone with
-`docker compose -f deploy/compose.yaml up -d postgres storage storage-init`):
+Or run the API and web app directly while developing. The API expects Postgres and
+storage; start just those in Docker and create the bucket from the backend:
+
+```sh
+docker compose -f deploy/compose.yaml up -d --wait postgres storage
+(cd backend && uv run framegen-storage-init)
+```
+
+Then:
 
 ```sh
 (cd backend && uv run uvicorn framegen.api.app:app --reload)   # API on :8000
