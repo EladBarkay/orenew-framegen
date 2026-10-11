@@ -3,6 +3,10 @@
 > **Purpose of this file:** the design of FrameGen, written to be built from. It records
 > what the product does, how it is built, and why. Requirement IDs are stable; refer to
 > them by ID. Decisions are recorded in section 13, open questions in section 14.
+>
+> Tasks, questions and decisions are tracked in Notion, in the "Orenew FrameGen" page:
+> "FrameGen tasks" (task IDs T-xx refer to it), "FrameGen questions and decisions", and
+> "FrameGen reference".
 
 ---
 
