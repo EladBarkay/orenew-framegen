@@ -72,10 +72,14 @@ jobs:
         run: docker compose -f deploy/compose.yaml build
       - name: Start everything
         run: docker compose -f deploy/compose.yaml up --detach --wait --wait-timeout 180
-      - name: Smoke test through the web entrance
+      - name: Smoke test
         run: |
-          curl --fail --silent --show-error http://localhost:8080/v1/health/ready
+          # Readiness, inside the deployment: the API reaches the database and storage.
+          docker compose -f deploy/compose.yaml exec -T api python -c \
+            "import urllib.request; print(urllib.request.urlopen('http://localhost:8000/v1/health/ready').read().decode())"
+          # Through the public entrance: the web app and the API.
           curl --fail --silent --show-error --output /dev/null http://localhost:8080/
+          curl --fail --silent --show-error http://localhost:8080/v1/health
       - name: Logs
         if: failure()
         run: docker compose -f deploy/compose.yaml logs

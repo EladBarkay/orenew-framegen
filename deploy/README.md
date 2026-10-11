@@ -21,8 +21,14 @@ From the repository root:
 docker compose -f deploy/compose.yaml up --build --wait
 ```
 
-Then open http://localhost:8080. `GET /v1/health/ready` reports whether the API can reach
-the database and storage.
+Then open http://localhost:8080. `GET /v1/health` says the API is running. Whether it can
+reach the database and storage is `GET /v1/health/ready`, which is not published through
+Caddy; ask the API directly:
+
+```sh
+docker compose -f deploy/compose.yaml exec api python -c \
+  "import urllib.request; print(urllib.request.urlopen('http://localhost:8000/v1/health/ready').read().decode())"
+```
 
 - Stop: `docker compose -f deploy/compose.yaml down`. Data is kept in the
   `postgres-data` and `storage-data` volumes and is there on the next start.

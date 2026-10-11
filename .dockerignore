@@ -9,3 +9,5 @@
 **/.ruff_cache
 .git
 .github
+**/.env
+**/.env.*

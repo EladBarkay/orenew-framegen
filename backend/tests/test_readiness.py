@@ -40,10 +40,33 @@ def test_default_checks_are_built_once(monkeypatch: pytest.MonkeyPatch) -> None:
         return {"storage": ok}
 
     monkeypatch.setattr(app_module, "default_checks", fake_default_checks)
-    client = TestClient(create_app())
-    client.get("/v1/health/ready")
-    client.get("/v1/health/ready")
+    with TestClient(create_app()) as client:
+        assert built == [1], "built at startup"
+        client.get("/v1/health/ready")
+        client.get("/v1/health/ready")
     assert built == [1]
+
+
+def test_bad_settings_stop_startup(monkeypatch: pytest.MonkeyPatch) -> None:
+    def broken_default_checks(settings: object) -> dict[str, Check]:
+        raise ValueError("bad storage address")
+
+    monkeypatch.setattr(app_module, "default_checks", broken_default_checks)
+    with pytest.raises(ValueError, match="bad storage address"), TestClient(create_app()):
+        pass
+
+
+def test_a_check_that_dies_unexpectedly_does_not_wedge_readiness() -> None:
+    calls: list[int] = []
+
+    def dies() -> None:
+        calls.append(1)
+        if len(calls) == 1:
+            raise SystemExit("library gave up")  # not an Exception subclass
+
+    readiness = Readiness({"storage": dies}, deadline=1)
+    assert asyncio.run(readiness.run()) == {"storage": "unavailable"}
+    assert asyncio.run(readiness.run()) == {"storage": "ok"}
 
 
 def test_a_hung_check_is_cut_off_and_does_not_hold_up_others() -> None:

@@ -1,9 +1,9 @@
 """Readiness checks: can this process reach what it depends on?"""
 
 import asyncio
+import contextlib
 import logging
 import threading
-import time
 from collections.abc import Callable, Mapping
 
 import psycopg
@@ -51,35 +51,68 @@ def default_checks(settings: Settings) -> dict[str, Check]:
 
 
 class _Probe:
-    """Runs one check on its own thread, never more than one run at a time."""
+    """Runs one check on its own thread, never more than one run at a time.
+
+    Waiters are asyncio futures, resolved from the probe thread when its run ends, so
+    nobody polls and no thread is held while waiting.
+    """
 
     def __init__(self, check: Check) -> None:
         self._check = check
         self._lock = threading.Lock()
-        self._done: threading.Event | None = None
+        self._running = False
+        self._waiters: list[tuple[asyncio.AbstractEventLoop, asyncio.Future[None]]] = []
         self._outcome: tuple[str, str | None] = ("unavailable", "not checked yet")
 
-    def start(self) -> threading.Event:
-        """Starts a run unless one is still going (a hung dependency), and returns its event."""
+    def wait_for_run(self) -> asyncio.Future[None]:
+        """A future that resolves when the next or the current run ends.
+
+        Starts a run unless one is still going (a dependency that hangs).
+        """
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future[None] = loop.create_future()
         with self._lock:
-            if self._done is None or self._done.is_set():
-                self._done = threading.Event()
-                threading.Thread(target=self._run, args=(self._done,), daemon=True).start()
-            return self._done
+            # Drop waiters that gave up (timed out) while a hung run was still going.
+            self._waiters = [(lp, fut) for lp, fut in self._waiters if not fut.done()]
+            self._waiters.append((loop, future))
+            if self._running:
+                return future
+            self._running = True
+        try:
+            threading.Thread(target=self._run, daemon=True).start()
+        except BaseException:
+            self._finish(("unavailable", "could not start the check"))
+            raise
+        return future
 
     def outcome(self) -> tuple[str, str | None]:
         with self._lock:
             return self._outcome
 
-    def _run(self, done: threading.Event) -> None:
+    def _run(self) -> None:
+        outcome: tuple[str, str | None] = ("unavailable", "the check stopped unexpectedly")
         try:
             self._check()
-            outcome: tuple[str, str | None] = ("ok", None)
-        except Exception as error:
+            outcome = ("ok", None)
+        except BaseException as error:
             outcome = ("unavailable", f"{type(error).__name__}: {error}")
+        finally:
+            self._finish(outcome)
+
+    def _finish(self, outcome: tuple[str, str | None]) -> None:
         with self._lock:
             self._outcome = outcome
-        done.set()
+            self._running = False
+            waiters, self._waiters = self._waiters, []
+        for loop, future in waiters:
+            if not loop.is_closed():
+                with contextlib.suppress(RuntimeError):  # the loop closed after the check
+                    loop.call_soon_threadsafe(_resolve, future)
+
+
+def _resolve(future: asyncio.Future[None]) -> None:
+    if not future.done():
+        future.set_result(None)
 
 
 class Readiness:
@@ -96,17 +129,14 @@ class Readiness:
         self._last: dict[str, str] = {}
 
     async def run(self) -> dict[str, str]:
-        events = {name: probe.start() for name, probe in self._probes.items()}
-        give_up_at = time.monotonic() + self._deadline
-        while not all(event.is_set() for event in events.values()):
-            if time.monotonic() >= give_up_at:
-                break
-            await asyncio.sleep(0.02)
+        futures = {name: probe.wait_for_run() for name, probe in self._probes.items()}
+        await asyncio.wait(futures.values(), timeout=self._deadline)
         results: dict[str, str] = {}
-        for name, event in events.items():
-            if event.is_set():
+        for name, future in futures.items():
+            if future.done():
                 result, reason = self._probes[name].outcome()
             else:
+                future.cancel()
                 result, reason = "unavailable", f"no answer within {self._deadline} s"
             results[name] = result
             self._report(name, result, reason)

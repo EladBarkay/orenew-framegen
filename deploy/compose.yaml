@@ -81,13 +81,15 @@ services:
         condition: service_healthy
       storage-init:
         condition: service_completed_successfully
+    # Liveness only, so a database or storage outage does not take the web app down with
+    # it. Whether the API can reach them is GET /v1/health/ready (used by CI, not public).
     healthcheck:
       test:
         [
           CMD,
           python,
           -c,
-          "import urllib.request; urllib.request.urlopen('http://localhost:8000/v1/health/ready')",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/v1/health')",
         ]
       interval: 5s
       timeout: 5s

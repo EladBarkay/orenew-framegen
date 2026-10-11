@@ -41,7 +41,11 @@ def create_app(readiness_checks: Mapping[str, Check] | None = None) -> FastAPI:
     lock = threading.Lock()
 
     def readiness() -> Readiness:
-        # Built once, on first use: the checks and their storage client are reused.
+        """Built once and reused (checks and their storage client).
+
+        Normally built at startup, so bad settings stop the API from starting instead of
+        failing each request; built on first use only if startup did not run (tests).
+        """
         with lock:
             if not built:
                 checks = readiness_checks
@@ -53,6 +57,7 @@ def create_app(readiness_checks: Mapping[str, Check] | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         configure_logging()
+        readiness()
         yield
 
     app = FastAPI(

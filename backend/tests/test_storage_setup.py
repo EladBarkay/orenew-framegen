@@ -1,4 +1,7 @@
+from typing import Any
+
 import pytest
+from botocore.exceptions import ClientError, EndpointConnectionError
 
 from framegen.storage import setup
 
@@ -9,7 +12,7 @@ def test_storage_init_retries_until_storage_answers(monkeypatch: pytest.MonkeyPa
     def flaky_ensure_bucket(settings: object) -> bool:
         calls.append(1)
         if len(calls) < 3:
-            raise ConnectionError("not yet")
+            raise EndpointConnectionError(endpoint_url="http://storage:9000")
         return True
 
     monkeypatch.setattr(setup, "ensure_bucket", flaky_ensure_bucket)
@@ -19,8 +22,22 @@ def test_storage_init_retries_until_storage_answers(monkeypatch: pytest.MonkeyPa
 
 def test_storage_init_gives_up_after_the_last_attempt(monkeypatch: pytest.MonkeyPatch) -> None:
     def broken(settings: object) -> bool:
-        raise ConnectionError("down")
+        raise EndpointConnectionError(endpoint_url="http://storage:9000")
 
     monkeypatch.setattr(setup, "ensure_bucket", broken)
-    with pytest.raises(ConnectionError):
+    with pytest.raises(EndpointConnectionError):
         setup.main(attempts=2, first_wait=0)
+
+
+def test_errors_that_waiting_cannot_fix_fail_at_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[int] = []
+
+    def forbidden(settings: object) -> bool:
+        calls.append(1)
+        response: Any = {"Error": {"Code": "403"}, "ResponseMetadata": {"HTTPStatusCode": 403}}
+        raise ClientError(response, "HeadBucket")
+
+    monkeypatch.setattr(setup, "ensure_bucket", forbidden)
+    with pytest.raises(ClientError):
+        setup.main(attempts=5, first_wait=0)
+    assert calls == [1]
