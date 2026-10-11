@@ -15,7 +15,7 @@ the first response back (marked ``Idempotent-Replayed: true``) without running a
 import asyncio
 import hashlib
 import logging
-from collections.abc import Awaitable, Callable, MutableMapping
+from collections.abc import Awaitable, Callable, Coroutine, MutableMapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
@@ -273,21 +273,23 @@ class _Claim:
     key: str
     started: datetime
 
+    # Both run as their own task: when the request is being cancelled (client gone,
+    # shutdown), the key is still finished, or it would wait out LOCK_TIMEOUT and a retry
+    # could repeat work that already happened.
+
     async def complete(self, response: StoredResponse) -> None:
+        await _shielded(self._complete(response))
+
+    async def release(self) -> None:
+        await _shielded(self._release())
+
+    async def _complete(self, response: StoredResponse) -> None:
         try:
             await self.store.complete(self.owner, self.key, self.started, response)
         except Exception:
             # The work is done, so the client still gets its answer. The key stays
             # unfinished; a repeat is refused as in progress until LOCK_TIMEOUT passes.
             log.exception("could not remember the answer for an idempotency key")
-
-    async def release(self) -> None:
-        # Runs as its own task: when the request is being cancelled (client gone, shutdown),
-        # the key is still freed, or every retry would be refused until LOCK_TIMEOUT.
-        task = asyncio.ensure_future(self._release())
-        _releasing.add(task)
-        task.add_done_callback(_releasing.discard)
-        await asyncio.shield(task)
 
     async def _release(self) -> None:
         try:
@@ -297,8 +299,21 @@ class _Claim:
             log.exception("could not release an idempotency key")
 
 
-_releasing: set["asyncio.Future[None]"] = set()
-"""Keeps release tasks alive after the request that started them was cancelled."""
+_finishing: set["asyncio.Task[None]"] = set()
+"""Tasks finishing keys, kept alive after the request that started them was cancelled."""
+
+
+async def _shielded(work: Coroutine[Any, Any, None]) -> None:
+    task = asyncio.ensure_future(work)
+    _finishing.add(task)
+    task.add_done_callback(_finishing.discard)
+    await asyncio.shield(task)
+
+
+async def wait_for_pending_keys(timeout: float = 5) -> None:
+    """At shutdown, before the store goes away: let keys being finished get there."""
+    if _finishing:
+        await asyncio.wait(set(_finishing), timeout=timeout)
 
 
 async def _finish(
@@ -324,7 +339,9 @@ async def _send_stored(response: StoredResponse, send: Send, replayed: bool = Tr
     headers = [
         (name.encode("latin-1"), value.encode("latin-1")) for name, value in response.headers
     ]
-    headers.append((b"content-length", str(len(response.body)).encode()))
+    if response.status_code >= 200 and response.status_code not in (204, 304):
+        # These answers have no body and must not carry Content-Length.
+        headers.append((b"content-length", str(len(response.body)).encode()))
     if replayed:
         headers.append(REPLAYED_HEADER)
     await send({"type": "http.response.start", "status": response.status_code, "headers": headers})

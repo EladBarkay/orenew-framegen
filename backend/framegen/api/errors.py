@@ -98,7 +98,7 @@ def install_error_handlers(app: FastAPI) -> None:
             # These answers must not have a body.
             return Response(status_code=status, headers=error.headers)
         code = _HTTP_CODES.get(status, "http_error")
-        if isinstance(error.detail, str):
+        if isinstance(error.detail, str) and error.detail:
             message = error.detail
         else:
             try:

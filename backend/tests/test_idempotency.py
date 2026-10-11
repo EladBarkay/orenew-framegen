@@ -19,6 +19,7 @@ from framegen.api.idempotency import (
     Started,
     StoredResponse,
     _Claim,
+    wait_for_pending_keys,
 )
 
 
@@ -38,6 +39,10 @@ def app_counting_calls(calls: list[int], store: MemoryIdempotencyStore) -> FastA
     def flaky() -> None:
         calls.append(0)
         raise ApiError(503, "storage_unavailable", "Try again.")
+
+    @app.delete("/v1/orders/{order_id}", status_code=204)
+    def cancel(order_id: int) -> None:
+        calls.append(order_id)
 
     @app.post("/v1/busy")
     def busy() -> None:
@@ -243,5 +248,42 @@ def test_a_cancelled_request_still_frees_its_key() -> None:
             await task
         await asyncio.sleep(0.1)
         assert ("s", "k") not in store.entries
+
+    asyncio.run(scenario())
+
+
+def test_an_answer_without_a_body_has_no_content_length() -> None:
+    calls: list[int] = []
+    with TestClient(app_counting_calls(calls, MemoryIdempotencyStore())) as client:
+        first = client.delete("/v1/orders/7", headers={"Idempotency-Key": "k"})
+        again = client.delete("/v1/orders/7", headers={"Idempotency-Key": "k"})
+    assert (first.status_code, again.status_code) == (204, 204)
+    assert "content-length" not in first.headers
+    assert "content-length" not in again.headers
+    assert calls == [7]
+
+
+def test_a_cancelled_request_still_remembers_its_answer() -> None:
+    store = MemoryIdempotencyStore()
+    now = datetime.now(UTC)
+    answer = StoredResponse(201, [], b"done")
+
+    class SlowToSave(MemoryIdempotencyStore):
+        async def complete(
+            self, scope: str, key: str, started: datetime, response: StoredResponse
+        ) -> None:
+            await asyncio.sleep(0.05)
+            await store.complete(scope, key, started, response)
+
+    async def scenario() -> None:
+        await store.begin("s", "k", "f", now)
+        task = asyncio.create_task(_Claim(SlowToSave(), "s", "k", now).complete(answer))
+        await asyncio.sleep(0.01)
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+        # Shutdown waits for keys still being finished.
+        await wait_for_pending_keys()
+        assert await store.begin("s", "k", "f", now) == Replay(answer)
 
     asyncio.run(scenario())

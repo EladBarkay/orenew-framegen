@@ -8,7 +8,11 @@ from pydantic import BaseModel
 
 from framegen import __version__
 from framegen.api.errors import ERROR_RESPONSES, install_error_handlers
-from framegen.api.idempotency import IdempotencyMiddleware, IdempotencyStore
+from framegen.api.idempotency import (
+    IdempotencyMiddleware,
+    IdempotencyStore,
+    wait_for_pending_keys,
+)
 from framegen.db.engine import async_engine
 from framegen.db.idempotency_store import PostgresIdempotencyStore
 from framegen.health import Check, Readiness, default_checks
@@ -66,6 +70,7 @@ def create_app(
         try:
             yield
         finally:
+            await wait_for_pending_keys()
             if engine is not None:
                 await engine.dispose()
 

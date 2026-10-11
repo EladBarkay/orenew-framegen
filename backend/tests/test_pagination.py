@@ -51,7 +51,8 @@ def test_walking_the_pages_returns_every_item_once() -> None:
 
 def test_a_broken_cursor_is_a_clear_error() -> None:
     with TestClient(app_with_list()) as client:
-        for cursor in ("%%%not-base64", encode_cursor({"id": 1}) + "!!!"):
+        valid = encode_cursor({"id": 1})
+        for cursor in ("%%%not-base64", valid + "!!!", valid.replace("e", "+", 1)):
             response = client.get("/v1/items", params={"cursor": cursor})
             assert response.status_code == 400
             assert response.json()["error"]["code"] == "invalid_cursor"

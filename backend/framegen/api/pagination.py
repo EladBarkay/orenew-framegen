@@ -8,6 +8,7 @@ returned, so pages stay stable while items are added.
 import base64
 import binascii
 import json
+import re
 from typing import Annotated, Any
 
 from fastapi import Query
@@ -30,6 +31,10 @@ Cursor = Annotated[
 ]
 
 
+_BASE64URL = re.compile(r"[A-Za-z0-9_-]*")
+"""Checked first: the decoder silently skips other characters, and accepts + and /."""
+
+
 def encode_cursor(position: dict[str, Any]) -> str:
     raw = json.dumps(position, separators=(",", ":"), sort_keys=True).encode()
     return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
@@ -38,8 +43,9 @@ def encode_cursor(position: dict[str, Any]) -> str:
 def decode_cursor(cursor: str) -> dict[str, Any]:
     try:
         padded = cursor + "=" * (-len(cursor) % 4)
-        # validate=True: characters outside the alphabet are an error, not silently skipped.
-        position = json.loads(base64.b64decode(padded, altchars=b"-_", validate=True))
+        if not _BASE64URL.fullmatch(cursor):
+            raise ValueError("not base64url")
+        position = json.loads(base64.urlsafe_b64decode(padded))
     except (binascii.Error, ValueError, UnicodeDecodeError) as error:
         raise ApiError(400, "invalid_cursor", "The cursor is not valid.") from error
     if not isinstance(position, dict):

@@ -95,5 +95,9 @@ def test_unusual_statuses_are_answered_cleanly() -> None:
         unnamed = client.get("/v1/odd/499")
         not_modified = client.get("/v1/odd/304")
     assert unnamed.status_code == 499
-    assert unnamed.json()["error"]["code"] == "http_error"
+    assert unnamed.json()["error"] == {
+        "code": "http_error",
+        "message": "Request failed.",
+        "detail": None,
+    }
     assert (not_modified.status_code, not_modified.content) == (304, b"")
