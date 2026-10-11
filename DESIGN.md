@@ -583,11 +583,11 @@ Each milestone is usable on its own.
 |---|---|---|
 | D1 | **Licence: AGPL-3.0**, intended. Anyone running a changed FrameGen as a service must publish their changes. | 2026-10-11 |
 | D2 | **Hosting: one VPS with Docker Compose.** Caddy terminates HTTPS; Postgres and MinIO run as containers with volumes on the VPS. Nightly backups of the database and storage go off the machine (`pg_dump` + MinIO bucket sync). Workers run in the same Compose setup and can be scaled with more replicas, or moved to a second machine later without changes, because they share nothing but Postgres and storage. | 2026-10-11 |
+| D3 | **Fonts are included in packages.** The package's `fonts/` folder holds every font file the design uses. Built-in fonts are open-licence, so including them is allowed. When a photographer uploads a font, they confirm they have the right to use and share it; FrameGen shows that confirmation once per font. | 2026-10-11 |
 | D4 | **Contributions need the agreement.** As in Orenew, outside contributions are accepted only with the agreement in `CONTRIBUTING.md`, so the owner can reuse all of FrameGen's code. | 2026-10-11 |
 | D5 | **Studio roles: owner, admin, member only for now.** Finer permissions (for example members who can use but not see provider keys) come later; roles are checked at one point in the API so more can be added. | 2026-10-11 |
 | D6 | **Retention is configurable.** Settings per deployment (overridable per workspace later): drafts and unused pieces 30 days after the project's last activity; packages, uploads, templates and library 365 days; job records and usage 365 days. A workspace can delete everything in one action. Numbers are a starting point for the first version. | 2026-10-11 |
 | D7 | **Interface in one language (English) for now**, built so a language can be added easily: all interface text in `apps/web/src/locales/<language>.json`, components contain no text, layout with CSS logical properties so right-to-left needs no second layout, and the API returns error codes, never user-facing text. Frame text (headline, date) supports every language, Hebrew and English first. | 2026-10-11 |
-| D3 | **Fonts are included in packages.** The package's `fonts/` folder holds every font file the design uses. Built-in fonts are open-licence, so including them is allowed. When a photographer uploads a font, they confirm they have the right to use and share it; FrameGen shows that confirmation once per font. | 2026-10-11 |
 
 ## 14. Open questions
 
