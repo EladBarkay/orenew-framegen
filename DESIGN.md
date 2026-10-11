@@ -119,7 +119,7 @@ rounded rectangle, arch, oval, or a custom mask) and its place within the frame.
 
 ### 4.1 Frame spec
 
-The frame spec is JSON, validated by a published schema (`packages/spec`). Shortened:
+The frame spec is JSON, validated by a published schema (`backend/framegen/spec`, exported as JSON Schema). Shortened:
 
 ```jsonc
 {
@@ -183,7 +183,7 @@ side by side.
 - **Dates:** stored as one calendar date plus `afterSunset`. Each format renders it in
   a calendar:
   - Gregorian through `Intl.DateTimeFormat` patterns or styles, in any locale.
-  - Hebrew through `@hebcal/core`, with Hebrew-letter numerals (gematria, `תשפ״ז`)
+  - Hebrew through `pyluach`, with Hebrew-letter numerals (gematria, `תשפ״ז`)
     or digits. `afterSunset` moves the Hebrew date to the next day, because evening
     events (most weddings) fall on the following Hebrew date.
   - Several formats can be shown together with a joiner, or stacked.
@@ -252,7 +252,7 @@ page), SVG (stamps), and font files (TTF, OTF, WOFF2).
 
 | Source | Import |
 |---|---|
-| **Layered PSD** | Layers are read (`ag-psd`). Text layers become headline / date / stamp candidates by layer name, content (does it parse as a date? a phone number?) and position; the rest become decoration pieces in their original positions. The photographer confirms the mapping once. **Reuse costs no AI.** |
+| **Layered PSD** | Layers are read (`psd-tools`). Text layers become headline / date / stamp candidates by layer name, content (does it parse as a date? a phone number?) and position; the rest become decoration pieces in their original positions. The photographer confirms the mapping once. **Reuse costs no AI.** |
 | **PNG with transparency** | Window found from the see-through area (same rule as Orenew FR-7). A vision model finds the headline, date and stamp regions. Their text is removed with one image-edit (inpainting) call at import, and the clean decoration is stored. After that, **reuse costs no AI.** |
 | **One orientation only** | The other orientation is derived by re-flow if the decoration splits into pieces, otherwise by the AI-matched path (4.2), once, at import. |
 
@@ -382,7 +382,9 @@ FrameGen converts the same way Orenew's designer brief does.
 
 ### 8.3 Editable PSD
 
-Written with `ag-psd`. One layer per component, named and grouped:
+Written in two steps: `psd-tools` builds the file with groups and pixel layers, and a
+small `psd-writer` service (`ag-psd`) adds the text layers, which `psd-tools` cannot
+create (D8). One layer per component, named and grouped:
 
 ```
 Frame — Noa & Oded — portrait 1200×1800
@@ -416,10 +418,10 @@ fonts used. Packages are kept per project and can be downloaded again.
            │  HTTPS, public API only  │
            ▼                          ▼
  ┌────────────────────────────────────────────┐
- │ API (Fastify, OpenAPI 3.1, /v1)            │── Postgres (+pgvector)
+ │ API (FastAPI, OpenAPI 3.1, /v1)            │── Postgres (+pgvector)
  │ auth · validation · resources · estimates  │── Object storage (S3-compatible)
  └───────────────┬────────────────────────────┘
-                 │ jobs (pg-boss, in Postgres)
+                 │ jobs (Procrastinate, in Postgres)
                  ▼
  ┌────────────────────────────────────────────┐
  │ Workers                                    │── Provider adapters → AI providers
@@ -437,32 +439,42 @@ fonts used. Packages are kept per project and can be downloaded again.
 
 ### 9.2 Stack
 
+The backend is **Python** (D8). The web app stays TypeScript; it is thin and talks
+only to the API.
+
 | Part | Choice | Why |
 |---|---|---|
-| Language | TypeScript everywhere (Node 22 LTS) | One language for API, workers, schema and web; `ag-psd` (the best PSD writer) is TypeScript. |
-| API | Fastify + Zod schemas → OpenAPI 3.1 | The schema is the contract; docs and SDKs are generated from it. |
-| Database | PostgreSQL + pgvector, via Drizzle | One store for data, jobs and embeddings. |
-| Jobs | pg-boss | Queue in Postgres; no extra service to run. |
-| Files | S3-compatible storage (MinIO, in the same Docker Compose setup) | Pre-signed uploads/downloads. |
-| Renderer | Headless Chromium (Playwright) drawing the spec as SVG/HTML, transparent background | A complete, correct text engine (every script, right-to-left, font fallback) and exact vector drawing, for free. |
-| Pixel work | `sharp` (libvips) | Difference matting, alpha checks, trims, conversions. |
+| Backend language | Python 3.12 | The owner's language; the best ecosystem for image work, local models and AI provider SDKs. |
+| API | FastAPI + Pydantic v2 → OpenAPI 3.1 | Pydantic models are the contract; docs, the JSON Schema of the frame spec and the TypeScript client are generated from them. |
+| Database | PostgreSQL + pgvector, via SQLAlchemy 2 + Alembic | One store for data, jobs and embeddings; Alembic for schema changes. |
+| Jobs | Procrastinate | Queue in Postgres; no extra service to run. Workers are plain Python processes. |
+| Files | S3-compatible storage (MinIO, in the same Docker Compose setup), via `boto3` | Pre-signed uploads/downloads. |
+| Renderer | Headless Chromium (Playwright for Python) drawing the spec as SVG/HTML, transparent background | A complete, correct text engine (every script, right-to-left, font fallback) and exact vector drawing, for free. |
+| Pixel work | Pillow + NumPy | Difference matting, alpha checks, trims, conversions. |
 | Local models | ONNX Runtime (matting, upscaling) | No key and no per-call cost for those steps. |
-| PSD | `ag-psd` | Reads templates; writes layered PSDs with text layers. |
-| Hebrew calendar | `@hebcal/core` | Hebrew dates and gematria numerals. |
-| Web app | SvelteKit (static build) + TypeScript | Same UI technology as Orenew. |
-| Deployment | Docker Compose on one VPS (D2): Caddy (HTTPS), API, worker, web, Postgres, MinIO. The same file runs locally. | One command to run everything, locally and in production. |
+| PSD reading | `psd-tools` | Reads templates: layers, groups, text layer content and fonts. |
+| PSD writing | `psd-tools` for pixel layers and groups; `psd-writer`, a small internal Node service using `ag-psd`, for text layers | `psd-tools` cannot create text layers or change their text (checked, 1.24.0). The Node part is one small, isolated service: JSON layer list in, PSD out. |
+| Hebrew calendar | `pyluach` | Hebrew dates and gematria numerals (`א׳ חשון תשפ״ז`). |
+| Tooling | `uv` (dependencies), Ruff (lint/format), mypy, pytest | Fast and standard. |
+| Web app | SvelteKit (static build) + TypeScript, client generated from the OpenAPI document | Same UI technology as Orenew. |
+| Deployment | Docker Compose on one VPS (D2): Caddy (HTTPS), API, worker, psd-writer, web, Postgres, MinIO. The same file runs locally. | One command to run everything, locally and in production. |
 
 ### 9.3 Repository layout
 
 ```
-apps/api         HTTP API
-apps/worker      job runners (pipeline steps, renderer)
-apps/web         web app
-packages/spec    frame spec schema, types, validation, re-flow rules (published)
-packages/render  spec → SVG/HTML → PNG/PSD layers (runs in the worker)
-packages/providers  provider interfaces and adapters
-packages/pipeline   analyst, planner, reviser, painter, transparency methods
-packages/sdk     generated TypeScript client for the API (published)
+backend/                 Python package `framegen` (one codebase, two entry points)
+  framegen/api/          HTTP API (FastAPI routers)
+  framegen/worker/       job runners
+  framegen/spec/         frame spec models, validation, re-flow rules (exported as JSON Schema)
+  framegen/render/       spec → SVG/HTML → PNG / PSD layers
+  framegen/providers/    provider interfaces and adapters
+  framegen/pipeline/     analyst, planner, reviser, painter, transparency methods
+  framegen/storage/ db/  object storage, database models, migrations
+  tests/
+services/psd-writer/     Node + ag-psd: writes PSD text layers (internal only)
+web/                     SvelteKit web app
+sdk/typescript/          client generated from the OpenAPI document (published)
+deploy/                  docker-compose.yml, Caddyfile, backup scripts
 ```
 
 ### 9.4 Renderer determinism
@@ -588,6 +600,7 @@ Each milestone is usable on its own.
 | D5 | **Studio roles: owner, admin, member only for now.** Finer permissions (for example members who can use but not see provider keys) come later; roles are checked at one point in the API so more can be added. | 2026-10-11 |
 | D6 | **Retention is configurable.** Settings per deployment (overridable per workspace later): drafts and unused pieces 30 days after the project's last activity; packages, uploads, templates and library 365 days; job records and usage 365 days. A workspace can delete everything in one action. Numbers are a starting point for the first version. | 2026-10-11 |
 | D7 | **Interface in one language (English) for now**, built so a language can be added easily: all interface text in `apps/web/src/locales/<language>.json`, components contain no text, layout with CSS logical properties so right-to-left needs no second layout, and the API returns error codes, never user-facing text. Frame text (headline, date) supports every language, Hebrew and English first. | 2026-10-11 |
+| D8 | **Backend in Python**, not TypeScript, because the owner knows it better. PSD reading uses `psd-tools`. Because `psd-tools` cannot write text layers, a small internal `psd-writer` service (Node, `ag-psd`) adds them; it is the only non-Python backend code. The web app stays TypeScript. | 2026-10-11 |
 
 ## 14. Open questions
 
