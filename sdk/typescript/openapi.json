@@ -22,6 +22,15 @@
     }
   },
   "info": {
+    "contact": {
+      "name": "Orenew FrameGen",
+      "url": "https://github.com/EladBarkay/orenew-framegen"
+    },
+    "description": "FrameGen is free software under the GNU Affero General Public License, version 3 only. Source code: https://github.com/EladBarkay/orenew-framegen",
+    "license": {
+      "identifier": "AGPL-3.0-only",
+      "name": "GNU Affero General Public License v3.0 only"
+    },
     "title": "FrameGen API",
     "version": "0.1.0"
   },

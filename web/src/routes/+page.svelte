@@ -3,6 +3,7 @@
   import { onMount } from "svelte";
 
   import { apiState, type ApiState } from "#lib/health.ts";
+  import { SOURCE_URL } from "#lib/project.ts";
 
   // Placeholder home page for T-02: proves the web app reaches the API through the SDK.
   // Text moves to locale files in T-09.
@@ -34,12 +35,26 @@
   {/if}
 </main>
 
+<footer>
+  FrameGen is free software under the
+  <a href="https://www.gnu.org/licenses/agpl-3.0.html">GNU AGPL, version 3</a>.
+  <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- external link -->
+  <a href={SOURCE_URL}>Source code</a>
+</footer>
+
 <style>
-  main {
+  main,
+  footer {
     font-family: system-ui, sans-serif;
     margin-block: 4rem;
     margin-inline: auto;
     max-inline-size: 40rem;
     padding-inline: 1rem;
+  }
+
+  footer {
+    color: #555;
+    font-size: 0.875rem;
+    margin-block: 2rem;
   }
 </style>

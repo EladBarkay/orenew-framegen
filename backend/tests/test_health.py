@@ -14,3 +14,9 @@ def test_openapi_is_served_under_v1() -> None:
     response = TestClient(create_app()).get("/v1/openapi.json")
     assert response.status_code == 200
     assert response.json()["openapi"].startswith("3.1")
+
+
+def test_openapi_states_licence_and_source() -> None:
+    info = TestClient(create_app()).get("/v1/openapi.json").json()["info"]
+    assert info["license"]["identifier"] == "AGPL-3.0-only"
+    assert info["contact"]["url"] == "https://github.com/EladBarkay/orenew-framegen"

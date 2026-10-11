@@ -45,5 +45,28 @@ result; CI fails if it is out of date.
 
 ## Terms
 
-FrameGen is free software under the GNU Affero General Public License, version 3 only.
-See `LICENSE`.
+Copyright (C) 2026 Elad Barkay
+
+FrameGen is free software: you can redistribute it and/or modify it under the terms of
+the GNU Affero General Public License as published by the Free Software Foundation,
+version 3 only.
+
+FrameGen is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
+without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+PURPOSE. See the GNU Affero General Public License in `LICENSE` for more details.
+
+Anyone who runs a changed FrameGen as a service for others must offer those users its
+source code (section 13 of the licence). FrameGen does this itself: the web app links
+to its source, and the API document names its licence and source.
+
+## The name
+
+The names "Orenew FrameGen", "FrameGen" and "Orenew" and their logos belong to the
+project and are not covered by these terms. Unchanged copies may be shared and run under
+these names. A changed version passed on or run as a service by someone else must use a
+different name and logo, and must not suggest it is the official FrameGen or Orenew. See
+`NAME-AND-LOGO.md`.
+
+## Contributing
+
+See `CONTRIBUTING.md`.
