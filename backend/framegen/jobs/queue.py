@@ -38,8 +38,11 @@ async def start_job(
     """Records a queued job and puts its task on the queue. Returns the job's ID.
 
     If the queue cannot take it, the job is recorded as failed (queue_unavailable) and
-    the error is raised, so no job is left queued for ever.
+    the error is raised. Should the queue have taken it after all (the answer was lost),
+    the worker skips it, as only queued jobs are run.
     """
+    if job_type not in tasks.TASKS:
+        raise ValueError(f"no task for job type {job_type!r}")
     job_id = new_id("job")
     async with engine.begin() as conn:
         await conn.execute(

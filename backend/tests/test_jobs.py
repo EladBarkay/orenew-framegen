@@ -135,3 +135,70 @@ def test_a_job_the_queue_cannot_take_is_recorded_as_failed(
 def test_job_failed_carries_code_and_message() -> None:
     failure = JobFailed("provider_refused", "The provider refused the prompt.")
     assert (failure.code, str(failure)) == ("provider_refused", "The provider refused the prompt.")
+
+
+def run_directly(settings: Settings, job_id: str, work: Any) -> None:
+    async def scenario() -> None:
+        engine = async_engine(settings)
+        try:
+            await run_job(engine, job_id, work)
+        finally:
+            await engine.dispose()
+
+    asyncio.run(scenario())
+
+
+def test_only_a_queued_job_runs(settings: Settings, workspace_id: str) -> None:
+    job_id = asyncio.run(start_demo(settings, workspace_id))
+    ran: list[int] = []
+
+    async def work(progress: Progress) -> None:
+        ran.append(1)
+
+    run_directly(settings, job_id, work)
+    run_directly(settings, job_id, work)  # delivered again: already done, skipped
+    assert ran == [1]
+
+
+def test_a_cancelled_job_is_recorded_as_interrupted(settings: Settings, workspace_id: str) -> None:
+    job_id = asyncio.run(start_demo(settings, workspace_id))
+
+    async def work(progress: Progress) -> None:
+        raise asyncio.CancelledError
+
+    with pytest.raises(asyncio.CancelledError):
+        run_directly(settings, job_id, work)
+    row = job_row(settings, job_id)
+    assert (row["status"], row["error_code"]) == ("failed", "interrupted")
+
+
+def test_odd_progress_reports_are_made_safe(settings: Settings, workspace_id: str) -> None:
+    job_id = asyncio.run(start_demo(settings, workspace_id))
+
+    async def work(progress: Progress) -> None:
+        await progress.report(float("nan"), "x" * 500)
+        raise JobFailed("stop_here", "Stopped to look at the progress.")
+
+    run_directly(settings, job_id, work)
+    row = job_row(settings, job_id)
+    assert (row["error_code"], row["progress"], len(row["step"])) == ("stop_here", 0.0, 200)
+
+
+def test_an_unknown_job_type_is_refused(settings: Settings, workspace_id: str) -> None:
+    with pytest.raises(ValueError, match="demoo"):
+        asyncio.run(start_demo_of_type(settings, workspace_id, "demoo"))
+
+
+async def start_demo_of_type(settings: Settings, workspace_id: str, job_type: str) -> str:
+    engine = async_engine(settings)
+    try:
+        return await start_job(
+            queue_app(settings),
+            engine,
+            workspace_id=workspace_id,
+            job_type=job_type,
+            arguments={},
+            created_by=None,
+        )
+    finally:
+        await engine.dispose()

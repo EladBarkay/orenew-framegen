@@ -7,7 +7,9 @@ also sends a Postgres notification on ``JOB_EVENTS``, so whoever is following th
 learns about it at once.
 """
 
+import asyncio
 import logging
+import math
 from collections.abc import Awaitable, Callable, Mapping
 from datetime import UTC, datetime
 from typing import Any
@@ -40,20 +42,35 @@ class Progress:
         self._job_id = job_id
 
     async def report(self, fraction: float, step: str | None = None) -> None:
-        await _change(self._engine, self._job_id, progress=min(max(fraction, 0.0), 1.0), step=step)
+        progress = min(max(fraction, 0.0), 1.0) if math.isfinite(fraction) else 0.0
+        await _change(
+            self._engine, self._job_id, progress=progress, step=step[:200] if step else None
+        )
 
 
 Work = Callable[[Progress], Awaitable[Mapping[str, Any] | None]]
 
 
 async def run_job(engine: AsyncEngine, job_id: str, work: Work) -> None:
-    """Marks the job running, runs ``work``, and records how it ended."""
-    await _change(engine, job_id, status="running", started_at=datetime.now(UTC))
+    """Claims the job, runs ``work``, and records how it ended.
+
+    Only a queued job is claimed: one already failed (it could not be queued), deleted
+    with its workspace, or delivered a second time is skipped, so its work never runs.
+    """
+    if not await _claim(engine, job_id):
+        log.warning("job %s is not queued; skipped", job_id)
+        return
     try:
         result = await work(Progress(engine, job_id))
     except JobFailed as failure:
         await _finish(engine, job_id, error=(failure.code, failure.message))
         return
+    except asyncio.CancelledError:
+        # The worker stopped before the job finished (its grace period ran out).
+        await asyncio.shield(
+            _finish(engine, job_id, error=("interrupted", "The job was stopped before it ended."))
+        )
+        raise
     except Exception:
         log.exception("job %s failed", job_id)
         await _finish(engine, job_id, error=("internal", "Something went wrong on our side."))
@@ -74,6 +91,20 @@ async def _finish(
     else:
         values.update(status="failed", error_code=error[0], error_message=error[1][:500])
     await _change(engine, job_id, **values)
+
+
+async def _claim(engine: AsyncEngine, job_id: str) -> bool:
+    async with engine.begin() as conn:
+        claimed = await conn.execute(
+            update(jobs)
+            .where(jobs.c.id == job_id, jobs.c.status == "queued")
+            .values(status="running", started_at=datetime.now(UTC))
+            .returning(jobs.c.id)
+        )
+        if claimed.first() is None:
+            return False
+        await conn.execute(select(func.pg_notify(JOB_EVENTS, job_id)))
+    return True
 
 
 async def _change(engine: AsyncEngine, job_id: str, **values: Any) -> None:

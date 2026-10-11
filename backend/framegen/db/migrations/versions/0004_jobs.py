@@ -6,10 +6,10 @@ Create Date: 2026-10-12
 """
 
 from collections.abc import Sequence
+from pathlib import Path
 
 import sqlalchemy as sa
 from alembic import op
-from procrastinate.schema import SchemaManager
 from sqlalchemy.dialects import postgresql
 
 revision: str = "0004"
@@ -17,8 +17,10 @@ down_revision: str | None = "0003"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-# Procrastinate's own schema, from the pinned version in pyproject.toml. A later
-# Procrastinate upgrade adds a migration that applies its migration files in between.
+# Procrastinate's own schema, frozen as shipped by the version pinned in pyproject.toml
+# (3.10.0), so this migration always creates the same thing. A Procrastinate upgrade adds
+# a new migration that applies Procrastinate's own migration files for it.
+_PROCRASTINATE_SCHEMA = Path(__file__).with_name("0004_procrastinate_3_10_0.sql")
 _DROP_PROCRASTINATE = """
 DROP TABLE IF EXISTS procrastinate_events, procrastinate_periodic_defers,
     procrastinate_jobs, procrastinate_workers CASCADE;
@@ -36,7 +38,7 @@ DROP TYPE IF EXISTS procrastinate_job_to_defer_v1, procrastinate_job_event_type,
 
 
 def upgrade() -> None:
-    op.execute(SchemaManager.get_schema())
+    op.execute(_PROCRASTINATE_SCHEMA.read_text())
     op.create_table(
         "jobs",
         sa.Column("id", sa.String(length=40), nullable=False),
