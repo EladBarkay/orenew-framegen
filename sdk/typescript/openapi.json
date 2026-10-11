@@ -18,27 +18,6 @@
         ],
         "title": "Health",
         "type": "object"
-      },
-      "ReadinessReport": {
-        "properties": {
-          "checks": {
-            "additionalProperties": {
-              "type": "string"
-            },
-            "title": "Checks",
-            "type": "object"
-          },
-          "status": {
-            "title": "Status",
-            "type": "string"
-          }
-        },
-        "required": [
-          "status",
-          "checks"
-        ],
-        "title": "ReadinessReport",
-        "type": "object"
       }
     }
   },
@@ -74,38 +53,6 @@
           }
         },
         "summary": "Health",
-        "tags": [
-          "system"
-        ]
-      }
-    },
-    "/v1/health/ready": {
-      "get": {
-        "description": "Readiness: the API can reach the database and storage.",
-        "operationId": "getReadiness",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ReadinessReport"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "503": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ReadinessReport"
-                }
-              }
-            },
-            "description": "Service Unavailable"
-          }
-        },
-        "summary": "Ready",
         "tags": [
           "system"
         ]

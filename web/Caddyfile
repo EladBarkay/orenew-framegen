@@ -3,11 +3,6 @@
 {$FRAMEGEN_SITE_ADDRESS::80} {
 	encode zstd gzip
 
-	# Readiness reveals which dependency is down; it stays inside the deployment.
-	handle /v1/health/ready {
-		respond 404
-	}
-
 	@api path /v1 /v1/*
 	handle @api {
 		reverse_proxy {$FRAMEGEN_API_UPSTREAM:api:8000}

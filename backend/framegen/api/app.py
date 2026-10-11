@@ -1,9 +1,8 @@
 import logging
-import threading
 from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Response, status
+from fastapi import FastAPI, Request, Response, status
 from pydantic import BaseModel
 
 from framegen import __version__
@@ -37,27 +36,14 @@ def configure_logging() -> None:
 
 
 def create_app(readiness_checks: Mapping[str, Check] | None = None) -> FastAPI:
-    built: list[Readiness] = []
-    lock = threading.Lock()
-
-    def readiness() -> Readiness:
-        """Built once and reused (checks and their storage client).
-
-        Normally built at startup, so bad settings stop the API from starting instead of
-        failing each request; built on first use only if startup did not run (tests).
-        """
-        with lock:
-            if not built:
-                checks = readiness_checks
-                if checks is None:
-                    checks = default_checks(get_settings())
-                built.append(Readiness(checks))
-            return built[0]
-
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         configure_logging()
-        readiness()
+        # Built once at startup and reused, so bad settings stop the API from starting.
+        checks = (
+            readiness_checks if readiness_checks is not None else default_checks(get_settings())
+        )
+        app.state.readiness = Readiness(checks)
         yield
 
     app = FastAPI(
@@ -83,15 +69,13 @@ def create_app(readiness_checks: Mapping[str, Check] | None = None) -> FastAPI:
         """Liveness: the API process is running."""
         return Health(status="ok", version=__version__)
 
-    @app.get(
-        "/v1/health/ready",
-        operation_id="getReadiness",
-        tags=["system"],
-        responses={503: {"model": ReadinessReport}},
-    )
-    async def ready(response: Response) -> ReadinessReport:
+    # Outside /v1: the public entrance (Caddy) forwards only /v1, so this stays inside the
+    # deployment, and it is not part of the public API or its documentation.
+    @app.get("/internal/health/ready", include_in_schema=False)
+    async def ready(request: Request, response: Response) -> ReadinessReport:
         """Readiness: the API can reach the database and storage."""
-        results = await readiness().run()
+        readiness: Readiness = request.app.state.readiness
+        results = await readiness.run()
         if all(result == "ok" for result in results.values()):
             return ReadinessReport(status="ready", checks=results)
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE

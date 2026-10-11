@@ -82,7 +82,7 @@ services:
       storage-init:
         condition: service_completed_successfully
     # Liveness only, so a database or storage outage does not take the web app down with
-    # it. Whether the API can reach them is GET /v1/health/ready (used by CI, not public).
+    # it. Whether the API can reach them is GET /internal/health/ready (not public; CI uses it).
     healthcheck:
       test:
         [

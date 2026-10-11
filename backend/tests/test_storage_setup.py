@@ -1,7 +1,7 @@
 from typing import Any
 
 import pytest
-from botocore.exceptions import ClientError, EndpointConnectionError
+from botocore.exceptions import ClientError, EndpointConnectionError, ParamValidationError
 
 from framegen.storage import setup
 
@@ -39,5 +39,18 @@ def test_errors_that_waiting_cannot_fix_fail_at_once(monkeypatch: pytest.MonkeyP
 
     monkeypatch.setattr(setup, "ensure_bucket", forbidden)
     with pytest.raises(ClientError):
+        setup.main(attempts=5, first_wait=0)
+    assert calls == [1]
+
+
+def test_wrong_settings_are_not_retried(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[int] = []
+
+    def invalid(settings: object) -> bool:
+        calls.append(1)
+        raise ParamValidationError(report="Invalid bucket name")
+
+    monkeypatch.setattr(setup, "ensure_bucket", invalid)
+    with pytest.raises(ParamValidationError):
         setup.main(attempts=5, first_wait=0)
     assert calls == [1]

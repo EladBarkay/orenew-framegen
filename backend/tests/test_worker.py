@@ -6,8 +6,9 @@ from framegen.worker.main import run
 
 
 def test_worker_runs_until_stopped(caplog: pytest.LogCaptureFixture) -> None:
-    polls = iter([False, False, True])
+    waited: list[int] = []
     with caplog.at_level(logging.INFO, logger="framegen.worker"):
-        run(lambda: next(polls), poll_seconds=0)
+        run(lambda: waited.append(1))
+    assert waited == [1]
     assert "started" in caplog.text
     assert "stopped" in caplog.text

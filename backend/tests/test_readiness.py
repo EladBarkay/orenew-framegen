@@ -19,15 +19,15 @@ def broken() -> None:
 
 
 def test_ready_when_every_check_passes() -> None:
-    client = TestClient(create_app(readiness_checks={"database": ok, "storage": ok}))
-    response = client.get("/v1/health/ready")
+    with TestClient(create_app(readiness_checks={"database": ok, "storage": ok})) as client:
+        response = client.get("/internal/health/ready")
     assert response.status_code == 200
     assert response.json() == {"status": "ready", "checks": {"database": "ok", "storage": "ok"}}
 
 
 def test_unavailable_names_the_failing_dependency() -> None:
-    client = TestClient(create_app(readiness_checks={"database": ok, "storage": broken}))
-    response = client.get("/v1/health/ready")
+    with TestClient(create_app(readiness_checks={"database": ok, "storage": broken})) as client:
+        response = client.get("/internal/health/ready")
     assert response.status_code == 503
     assert response.json()["checks"] == {"database": "ok", "storage": "unavailable"}
 
@@ -42,8 +42,8 @@ def test_default_checks_are_built_once(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(app_module, "default_checks", fake_default_checks)
     with TestClient(create_app()) as client:
         assert built == [1], "built at startup"
-        client.get("/v1/health/ready")
-        client.get("/v1/health/ready")
+        client.get("/internal/health/ready")
+        client.get("/internal/health/ready")
     assert built == [1]
 
 
@@ -104,3 +104,20 @@ def test_failure_is_logged_once_until_it_changes(caplog: pytest.LogCaptureFixtur
         "readiness check 'storage' failed: ConnectionError: down",
         "readiness check 'storage' recovered",
     ]
+
+
+def test_readiness_is_not_part_of_the_public_api() -> None:
+    with TestClient(create_app(readiness_checks={})) as client:
+        paths = client.get("/v1/openapi.json").json()["paths"]
+        assert all("ready" not in path for path in paths)
+        assert client.get("/internal/health/ready").json() == {"status": "ready", "checks": {}}
+
+
+def test_a_check_that_cannot_start_is_reported_not_raised(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def no_threads(self: threading.Thread) -> None:
+        raise RuntimeError("can't start new thread")
+
+    monkeypatch.setattr(threading.Thread, "start", no_threads)
+    assert asyncio.run(Readiness({"storage": ok}).run()) == {"storage": "unavailable"}

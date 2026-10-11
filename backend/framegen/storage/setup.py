@@ -3,7 +3,8 @@
 import logging
 import time
 
-from botocore.exceptions import BotoCoreError, ClientError
+from botocore.exceptions import ClientError, HTTPClientError
+from botocore.exceptions import ConnectionError as BotoConnectionError
 
 from framegen.settings import Settings, get_settings
 from framegen.storage.client import s3_client
@@ -30,8 +31,9 @@ def ensure_bucket(settings: Settings) -> bool:
                 CreateBucketConfiguration={"LocationConstraint": settings.s3_region},  # type: ignore[typeddict-item]
             )
     except ClientError as error:
-        # Another setup run created it between our check and our create.
-        if _error_code(error) in ("BucketAlreadyOwnedByYou", "BucketAlreadyExists"):
+        # Another setup run of ours created it between our check and our create.
+        # (BucketAlreadyExists is not ours: on shared S3 another account owns that name.)
+        if _error_code(error) == "BucketAlreadyOwnedByYou":
             return False
         raise
     return True
@@ -43,8 +45,8 @@ def _error_code(error: ClientError) -> str:
 
 def _is_transient(error: Exception) -> bool:
     """Worth retrying: the storage is not reachable yet or answered with a server error."""
-    if isinstance(error, BotoCoreError):
-        return True  # connection refused, timeouts, endpoint not reachable
+    if isinstance(error, BotoConnectionError | HTTPClientError):
+        return True  # refused, timed out, closed: the storage may still be starting
     if isinstance(error, ClientError):
         status = error.response.get("ResponseMetadata", {}).get("HTTPStatusCode", 0)
         return status >= 500
