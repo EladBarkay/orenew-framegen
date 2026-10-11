@@ -21,6 +21,7 @@ import re
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Annotated, Any, Literal
+from urllib.parse import quote
 
 from botocore.exceptions import ClientError
 from fastapi import APIRouter, Path, Query, Request, status
@@ -35,6 +36,7 @@ from framegen.api.pagination import DEFAULT_LIMIT, Cursor, Limit, Page, after_ke
 from framegen.assets.filetypes import HEADER_BYTES, TYPES, pixel_size
 from framegen.db.tables import assets
 from framegen.ids import new_id
+from framegen.storage.client import MISSING, error_code
 
 if TYPE_CHECKING:
     from mypy_boto3_s3 import S3Client
@@ -121,14 +123,16 @@ def _hex_to_base64(sha256: str) -> str:
 
 
 def _download_url(presigner: S3Client, bucket: str, row: Row) -> str:
-    filename = row["filename"].encode("ascii", "replace").decode().replace("?", "_")
+    # An ASCII name for old clients, and the real one (RFC 6266) for everything else.
+    plain = row["filename"].encode("ascii", "replace").decode().replace("?", "_")
+    disposition = f"attachment; filename=\"{plain}\"; filename*=UTF-8''{quote(row['filename'])}"
     return presigner.generate_presigned_url(
         "get_object",
         Params={
             "Bucket": bucket,
             "Key": row["storage_key"],
             "ResponseContentType": row["content_type"],
-            "ResponseContentDisposition": f'attachment; filename="{filename}"',
+            "ResponseContentDisposition": disposition,
         },
         ExpiresIn=int(DOWNLOAD_LINK_LIFETIME.total_seconds()),
     )
@@ -244,7 +248,7 @@ async def complete_asset(
         try:
             head = storage.head_object(Bucket=bucket, Key=key, ChecksumMode="ENABLED")
         except ClientError as error:
-            if error.response.get("Error", {}).get("Code") in ("404", "NoSuchKey", "NotFound"):
+            if error_code(error) in MISSING:
                 return None, b""
             raise
         return dict(head), _read(storage, bucket, key, 0, HEADER_BYTES)
@@ -267,8 +271,9 @@ async def complete_asset(
         )
 
     def read(offset: int, length: int) -> bytes:
-        if offset == 0 and length <= len(first_bytes):
-            return first_bytes[:length]
+        # A file shorter than HEADER_BYTES is already here whole.
+        if offset + length <= len(first_bytes) or len(first_bytes) < HEADER_BYTES:
+            return first_bytes[offset : offset + length]
         return _read(storage, bucket, key, offset, length)
 
     size = await asyncio.to_thread(pixel_size, row["content_type"], read)
@@ -340,7 +345,7 @@ def _read(storage: S3Client, bucket: str, key: str, offset: int, length: int) ->
             Bucket=bucket, Key=key, Range=f"bytes={offset}-{offset + length - 1}"
         )
     except ClientError as error:
-        if error.response.get("Error", {}).get("Code") == "InvalidRange":
+        if error_code(error) == "InvalidRange":
             return b""  # past the end of the file
         raise
     data: bytes = answer["Body"].read()

@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 
 import boto3
 from botocore.client import Config
+from botocore.exceptions import ClientError
 
 from framegen.settings import Settings
 
@@ -47,3 +48,13 @@ def presign_client(settings: Settings) -> S3Client:
     """Signs links for browsers. It never connects anywhere: links are signed for the
     public storage address (settings.s3_public_url), which browsers can reach."""
     return s3_client(settings, endpoint_url=settings.s3_public_url)
+
+
+def error_code(error: ClientError) -> str:
+    """The S3 error code, such as NoSuchKey; for HEAD requests, which have no body, the
+    HTTP status as text."""
+    return str(error.response.get("Error", {}).get("Code", ""))
+
+
+MISSING = ("404", "NoSuchKey", "NoSuchBucket", "NotFound")
+"""Error codes that mean the object or bucket does not exist."""

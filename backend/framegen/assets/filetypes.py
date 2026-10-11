@@ -6,6 +6,7 @@ file's header without decoding the image.
 """
 
 import io
+import math
 import re
 import struct
 import warnings
@@ -40,7 +41,8 @@ def _is_webp(head: bytes) -> bool:
     return head[:4] == b"RIFF" and head[8:12] == b"WEBP"
 
 
-_HEIF_BRANDS = {b"heic", b"heix", b"heim", b"heis", b"hevc", b"hevx", b"mif1", b"msf1"}
+# HEVC brands only: the generic mif1/msf1 are also listed by AVIF files.
+_HEIF_BRANDS = {b"heic", b"heix", b"heim", b"heis", b"hevc", b"hevx"}
 
 
 def _is_heif(head: bytes) -> bool:
@@ -51,11 +53,28 @@ def _is_heif(head: bytes) -> bool:
     return any(brand in _HEIF_BRANDS for brand in brands)
 
 
-_SVG_ROOT = re.compile(rb"^\s*(<\?xml[^>]*>\s*)?(<!--.*?-->\s*|<!DOCTYPE[^>]*>\s*)*<svg[\s>]", re.S)
+_SVG_PROLOG = ((b"<?xml", b"?>"), (b"<!--", b"-->"), (b"<!DOCTYPE", b">"))
 
 
 def _is_svg(head: bytes) -> bool:
-    return bool(_SVG_ROOT.match(head.removeprefix(b"\xef\xbb\xbf")))
+    """The root element is <svg>, after an optional XML declaration, comments and doctype.
+
+    A plain scan, each step moving forward, so any input is checked in linear time.
+    """
+    position = len(head) - len(head.removeprefix(b"\xef\xbb\xbf"))
+    while True:
+        while position < len(head) and head[position : position + 1].isspace():
+            position += 1
+        for opening, closing in _SVG_PROLOG:
+            if head.startswith(opening, position):
+                end = head.find(closing, position + len(opening))
+                if end < 0:
+                    return False
+                position = end + len(closing)
+                break
+        else:
+            after = head[position + 4 : position + 5]
+            return head.startswith(b"<svg", position) and (after.isspace() or after in (b">", b"/"))
 
 
 TYPES: dict[str, FileType] = {
@@ -88,11 +107,11 @@ def pixel_size(content_type: str, read: Callable[[int, int], bytes]) -> tuple[in
         if len(head) < 26:
             return None
         height, width = struct.unpack(">II", head[14:22])
-        return width, height
+        return _plausible((width, height))
     if content_type == "image/heic":
-        return _heif_size(head)
+        return _plausible(_heif_size(head))
     if content_type == "image/svg+xml":
-        return _svg_size(head)
+        return _plausible(_svg_size(head))
     if TYPES[content_type].family != "image":
         return None
     with warnings.catch_warnings():
@@ -100,7 +119,7 @@ def pixel_size(content_type: str, read: Callable[[int, int], bytes]) -> tuple[in
         warnings.simplefilter("ignore", Image.DecompressionBombWarning)
         try:
             with Image.open(io.BufferedReader(_RangedFile(read, head))) as image:
-                return image.size
+                return _plausible(image.size)
         except (UnidentifiedImageError, Image.DecompressionBombError, OSError, SyntaxError):
             return None
 
@@ -129,14 +148,30 @@ def _svg_size(head: bytes) -> tuple[int, int] | None:
     attrs = {name: value for name, value in _ATTR.findall(tag.group())}
     width, height = (_LENGTH.match(attrs.get(name, b"")) for name in (b"width", b"height"))
     if width and height:
-        return round(float(width.group(1))), round(float(height.group(1)))
+        return _whole(width.group(1)), _whole(height.group(1))
     box = attrs.get(b"viewBox", b"").replace(b",", b" ").split()
     if len(box) == 4:
-        try:
-            return round(float(box[2])), round(float(box[3]))
-        except ValueError:
-            return None
+        return _whole(box[2]), _whole(box[3])
     return None
+
+
+def _whole(number: bytes) -> int:
+    """A dimension rounded to whole pixels; 0 for anything that is not a finite number."""
+    try:
+        value = float(number)
+    except ValueError:
+        return 0
+    return round(value) if math.isfinite(value) else 0
+
+
+MAX_DIMENSION = 1_000_000
+"""Larger widths or heights are taken as nonsense (and would not fit the database)."""
+
+
+def _plausible(size: tuple[int, int] | None) -> tuple[int, int] | None:
+    if size is None or not all(0 < side <= MAX_DIMENSION for side in size):
+        return None
+    return size
 
 
 class _RangedFile(io.RawIOBase):

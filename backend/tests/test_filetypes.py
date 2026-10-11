@@ -1,5 +1,6 @@
 import io
 import struct
+import time
 
 import pytest
 from PIL import Image
@@ -103,3 +104,31 @@ def test_a_size_far_into_the_file_is_read_in_parts() -> None:
 
 def test_a_damaged_header_has_no_size() -> None:
     assert pixel_size("image/png", reader(b"\x89PNG\r\n\x1a\n" + b"\0" * 20)) is None
+
+
+def test_svg_recognition_takes_linear_time() -> None:
+    started = time.monotonic()
+    assert TYPES["image/svg+xml"].matches(b"<!---->" * 10_000 + b"<svg>")
+    assert not TYPES["image/svg+xml"].matches(b"<!---->" * 10_000 + b"x")
+    assert not TYPES["image/svg+xml"].matches(b"<!--" * 10_000)
+    assert time.monotonic() - started < 1
+
+
+def test_avif_is_not_heic() -> None:
+    avif = struct.pack(">I", 24) + b"ftyp" + b"avif" + b"\0\0\0\0" + b"mif1miaf"
+    assert not TYPES["image/heic"].matches(avif)
+
+
+@pytest.mark.parametrize(
+    ("content_type", "data"),
+    [
+        ("image/vnd.adobe.photoshop", psd_header(0xFFFFFFFF, 10)),
+        ("image/heic", heic([(0xFFFFFFFF, 0xFFFFFFFF)])),
+        ("image/svg+xml", b'<svg width="99999999999" height="10">'),
+        ("image/svg+xml", b'<svg viewBox="0 0 1e999 1">'),
+        ("image/svg+xml", b'<svg viewBox="0 0 inf nan">'),
+        ("image/svg+xml", b'<svg width="0" height="10">'),
+    ],
+)
+def test_impossible_sizes_are_no_size(content_type: str, data: bytes) -> None:
+    assert pixel_size(content_type, reader(data)) is None

@@ -103,7 +103,9 @@ def test_upload_complete_and_download(client: TestClient) -> None:
 
     download = fetch(done["download_url"])
     assert download.content == data
-    assert download.headers["content-disposition"] == 'attachment; filename="frame.png"'
+    assert download.headers["content-disposition"] == (
+        "attachment; filename=\"frame.png\"; filename*=UTF-8''frame.png"
+    )
 
     again = client.post(f"/v1/workspaces/{workspace_id}/assets/{asset_id}/complete")
     assert again.json()["status"] == "ready"
@@ -201,3 +203,15 @@ def test_fonts_and_kind_filter(client: TestClient) -> None:
     assert [a["id"] for a in fonts.json()["items"]] == [done["id"]]
     references = client.get(f"/v1/workspaces/{workspace_id}/assets", params={"kind": "reference"})
     assert references.json()["items"] == []
+
+
+def test_a_hebrew_file_name_downloads_under_its_name(client: TestClient) -> None:
+    workspace_id = workspace(client)
+    data = png()
+    created = start(client, workspace_id, data, filename="מסגרת.png").json()
+    upload(created, data)
+    done = client.post(
+        f"/v1/workspaces/{workspace_id}/assets/{created['asset']['id']}/complete"
+    ).json()
+    disposition = fetch(done["download_url"]).headers["content-disposition"]
+    assert "filename*=UTF-8''%D7%9E%D7%A1%D7%92%D7%A8%D7%AA.png" in disposition
