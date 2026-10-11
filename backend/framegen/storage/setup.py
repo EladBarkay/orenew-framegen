@@ -6,7 +6,7 @@ import logging
 import time
 from typing import TYPE_CHECKING
 
-from botocore.exceptions import ClientError, HTTPClientError
+from botocore.exceptions import ClientError, HTTPClientError, ProxyConnectionError, SSLError
 from botocore.exceptions import ConnectionError as BotoConnectionError
 
 from framegen.settings import Settings, get_settings
@@ -50,6 +50,8 @@ def _error_code(error: ClientError) -> str:
 
 def _is_transient(error: Exception) -> bool:
     """Worth retrying: the storage is not reachable yet or answered with a server error."""
+    if isinstance(error, SSLError | ProxyConnectionError):
+        return False  # wrong scheme, certificate or proxy: a setting, not a slow start
     if isinstance(error, BotoConnectionError | HTTPClientError):
         return True  # refused, timed out, closed: the storage may still be starting
     if isinstance(error, ClientError):
@@ -61,8 +63,9 @@ def _is_transient(error: Exception) -> bool:
 def main(attempts: int = 6, first_wait: float = 1.0) -> None:
     """Creates the bucket, retrying while storage is starting up.
 
-    Each try takes at most about 5 s (one request, 2 s to connect, 3 s to answer), and the
-    waits between tries double from 1 s, so six tries give up after about a minute.
+    Each try sends at most two requests (check, then create), each allowed 2 s to connect
+    and 3 s to answer, so about 10 s; the waits between tries double from 1 s. Six tries
+    give up after about a minute and a half at worst.
     Errors that waiting cannot fix, such as wrong credentials, fail at once.
     """
     if attempts < 1:

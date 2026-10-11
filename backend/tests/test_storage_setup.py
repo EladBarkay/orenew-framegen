@@ -1,7 +1,12 @@
 from typing import Any
 
 import pytest
-from botocore.exceptions import ClientError, EndpointConnectionError, ParamValidationError
+from botocore.exceptions import (
+    ClientError,
+    EndpointConnectionError,
+    ParamValidationError,
+    SSLError,
+)
 
 from framegen.storage import setup
 
@@ -52,5 +57,18 @@ def test_wrong_settings_are_not_retried(monkeypatch: pytest.MonkeyPatch) -> None
 
     monkeypatch.setattr(setup, "ensure_bucket", invalid)
     with pytest.raises(ParamValidationError):
+        setup.main(attempts=5, first_wait=0)
+    assert calls == [1]
+
+
+def test_tls_and_proxy_errors_are_not_retried(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[int] = []
+
+    def wrong_scheme(settings: object, client: object) -> bool:
+        calls.append(1)
+        raise SSLError(endpoint_url="https://storage:9000", error=OSError("wrong version number"))
+
+    monkeypatch.setattr(setup, "ensure_bucket", wrong_scheme)
+    with pytest.raises(SSLError):
         setup.main(attempts=5, first_wait=0)
     assert calls == [1]

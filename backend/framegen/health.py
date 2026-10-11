@@ -93,7 +93,7 @@ class Readiness:
     def __init__(self, checks: Mapping[str, Check], deadline: float = DEADLINE_SECONDS) -> None:
         self._probes = {name: _Probe(check) for name, check in checks.items()}
         self._deadline = deadline
-        self._log_lock = threading.Lock()
+        # Only the event-loop thread running run() touches this; probe threads never do.
         self._last: dict[str, str] = {}
 
     async def run(self) -> dict[str, str]:
@@ -114,9 +114,8 @@ class Readiness:
         return results
 
     def _report(self, name: str, result: str, reason: str | None) -> None:
-        with self._log_lock:
-            previous = self._last.get(name)
-            self._last[name] = result
+        previous = self._last.get(name)
+        self._last[name] = result
         if result == previous:
             return
         if result == "ok":

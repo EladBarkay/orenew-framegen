@@ -8,9 +8,12 @@ server.listen(port, () => {
 
 // Node as PID 1 in a container ignores SIGTERM unless it handles it: finish open requests
 // and exit, instead of being killed after Docker's grace period.
+let stopping = false;
 for (const signal of ["SIGTERM", "SIGINT"] as const) {
   process.on(signal, () => {
-    server.close(() => process.exit(0));
-    server.closeIdleConnections();
+    // A repeated signal must not cut off requests still being answered.
+    if (stopping) return;
+    stopping = true;
+    server.close((error) => process.exit(error ? 1 : 0));
   });
 }

@@ -126,6 +126,9 @@ services:
       context: ..
       dockerfile: web/Dockerfile
     image: framegen-web:local
+    environment:
+      # Read by web/Caddyfile. In production, the domain; Caddy then gets HTTPS itself (T-56).
+      FRAMEGEN_SITE_ADDRESS: ${FRAMEGEN_SITE_ADDRESS:-:80}
     ports:
       - 127.0.0.1:8080:80
     volumes:
