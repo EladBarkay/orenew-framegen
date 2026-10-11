@@ -6,11 +6,10 @@ data is never touched.
 
 import asyncio
 import os
-from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import inspect, text
 
 from framegen.api.idempotency import (
     KEPT_FOR,
@@ -30,32 +29,10 @@ pytestmark = pytest.mark.skipif(
     not os.environ.get("FRAMEGEN_TEST_POSTGRES"), reason="set FRAMEGEN_TEST_POSTGRES=1"
 )
 
-TEST_DB = "framegen_test"
-
-
-@pytest.fixture(scope="module")
-def settings() -> Iterator[Settings]:
-    admin = create_engine(
-        Settings().model_copy(update={"db_name": "postgres"}).database_url,
-        isolation_level="AUTOCOMMIT",
-    )
-    with admin.connect() as conn:
-        conn.execute(text(f"DROP DATABASE IF EXISTS {TEST_DB} WITH (FORCE)"))
-        conn.execute(text(f"CREATE DATABASE {TEST_DB}"))
-    test_settings = Settings(db_name=TEST_DB)
-    engine = sync_engine(test_settings)
-    with engine.begin() as conn:
-        migrate.upgrade(conn)
-    engine.dispose()
-    yield test_settings
-    with admin.connect() as conn:
-        conn.execute(text(f"DROP DATABASE IF EXISTS {TEST_DB} WITH (FORCE)"))
-    admin.dispose()
-
 
 def test_migrations_create_the_tables_and_can_be_undone(settings: Settings) -> None:
     engine = sync_engine(settings)
-    assert "idempotency_keys" in inspect(engine).get_table_names()
+    assert {"idempotency_keys", "users", "sessions"} <= set(inspect(engine).get_table_names())
     from alembic import command
 
     with engine.begin() as conn:

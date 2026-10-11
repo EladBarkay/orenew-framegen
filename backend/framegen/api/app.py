@@ -7,17 +7,19 @@ from fastapi import FastAPI, Request, Response, status
 from pydantic import BaseModel
 
 from framegen import __version__
+from framegen.api import auth, workspaces
 from framegen.api.errors import ERROR_RESPONSES, install_error_handlers
 from framegen.api.idempotency import (
     IdempotencyMiddleware,
     IdempotencyStore,
+    PrincipalResolver,
     wait_for_pending_keys,
 )
 from framegen.db.engine import async_engine
 from framegen.db.idempotency_store import PostgresIdempotencyStore
 from framegen.health import Check, Readiness, default_checks
 from framegen.project import LICENSE_ID, SOURCE_URL
-from framegen.settings import get_settings
+from framegen.settings import Settings, get_settings
 
 
 class Health(BaseModel):
@@ -51,28 +53,30 @@ def configure_logging() -> None:
 def create_app(
     readiness_checks: Mapping[str, Check] | None = None,
     idempotency_store: IdempotencyStore | None = None,
+    settings: Settings | None = None,
+    principal_resolver: PrincipalResolver | None = None,
 ) -> FastAPI:
-    """The API. Tests pass their own checks and store; otherwise both come from settings."""
+    """The API. Tests may pass their own settings, checks, idempotency store and principal
+    resolver; otherwise they come from the environment and the database."""
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         configure_logging()
-        settings = get_settings()
+        app_settings = settings or get_settings()
+        app.state.settings = app_settings
         # Built once at startup and reused, so bad settings stop the API from starting.
-        checks = readiness_checks if readiness_checks is not None else default_checks(settings)
+        checks = readiness_checks if readiness_checks is not None else default_checks(app_settings)
         app.state.readiness = Readiness(checks)
-        engine = None
-        if idempotency_store is None:
-            engine = async_engine(settings)
-            app.state.idempotency_store = PostgresIdempotencyStore(engine)
-        else:
-            app.state.idempotency_store = idempotency_store
+        # Connects lazily: nothing is opened until a request needs the database.
+        engine = async_engine(app_settings)
+        app.state.engine = engine
+        app.state.idempotency_store = idempotency_store or PostgresIdempotencyStore(engine)
+        app.state.principal_resolver = principal_resolver or auth.principal_from_session
         try:
             yield
         finally:
             await wait_for_pending_keys()
-            if engine is not None:
-                await engine.dispose()
+            await engine.dispose()
 
     app = FastAPI(
         title="FrameGen API",
@@ -94,6 +98,8 @@ def create_app(
     )
     install_error_handlers(app)
     app.add_middleware(IdempotencyMiddleware)
+    app.include_router(auth.router)
+    app.include_router(workspaces.router)
 
     @app.get("/v1/health", operation_id="getHealth", tags=["system"])
     def health() -> Health:

@@ -15,6 +15,7 @@ from framegen.api.idempotency import (
     LOCK_TIMEOUT,
     InProgress,
     MemoryIdempotencyStore,
+    PrincipalResolver,
     Replay,
     Started,
     StoredResponse,
@@ -27,8 +28,17 @@ class Order(BaseModel):
     size: int
 
 
+def signed_in_as(principal: str | None) -> PrincipalResolver:
+    async def resolve(scope: object) -> str | None:
+        return principal
+
+    return resolve
+
+
 def app_counting_calls(calls: list[int], store: MemoryIdempotencyStore) -> FastAPI:
-    app = create_app(readiness_checks={}, idempotency_store=store)
+    app = create_app(
+        readiness_checks={}, idempotency_store=store, principal_resolver=signed_in_as("tester")
+    )
 
     @app.post("/v1/orders", status_code=201)
     def create(order: Order) -> dict[str, int]:
@@ -121,7 +131,7 @@ def test_a_repeat_while_the_first_still_runs_is_refused() -> None:
 
         asyncio.run(
             store.begin(
-                "anonymous", "k", fingerprint("POST", "/v1/orders", b"", body), datetime.now(UTC)
+                "tester", "k", fingerprint("POST", "/v1/orders", b"", body), datetime.now(UTC)
             )
         )
         response = client.post(
@@ -287,3 +297,42 @@ def test_a_cancelled_request_still_remembers_its_answer() -> None:
         assert await store.begin("s", "k", "f", now) == Replay(answer)
 
     asyncio.run(scenario())
+
+
+def test_without_a_signed_in_user_the_key_is_ignored() -> None:
+    calls: list[int] = []
+    store = MemoryIdempotencyStore()
+    app = create_app(
+        readiness_checks={}, idempotency_store=store, principal_resolver=signed_in_as(None)
+    )
+
+    @app.post("/v1/things")
+    def make() -> None:
+        calls.append(1)
+
+    with TestClient(app) as client:
+        client.post("/v1/things", headers={"Idempotency-Key": "k"})
+        again = client.post("/v1/things", headers={"Idempotency-Key": "k"})
+    assert calls == [1, 1]
+    assert "Idempotent-Replayed" not in again.headers
+    assert store.entries == {}
+
+
+def test_if_the_sender_cannot_be_told_the_key_is_refused_cleanly() -> None:
+    async def broken(scope: object) -> str | None:
+        raise ConnectionError("database went away")
+
+    calls: list[int] = []
+    app = create_app(
+        readiness_checks={}, idempotency_store=MemoryIdempotencyStore(), principal_resolver=broken
+    )
+
+    @app.post("/v1/things")
+    def make() -> None:
+        calls.append(1)
+
+    with TestClient(app) as client:
+        response = client.post("/v1/things", headers={"Idempotency-Key": "k"})
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "idempotency_unavailable"
+    assert calls == []

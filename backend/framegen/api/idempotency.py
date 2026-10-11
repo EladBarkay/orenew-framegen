@@ -9,14 +9,15 @@ the first response back (marked ``Idempotent-Replayed: true``) without running a
   (409 ``idempotency_key_in_progress``); the client retries a little later.
 - Answers that mean "try again" are not remembered, so the client can retry them: server
   errors (5xx), 408 Request Timeout, 409 Conflict and 429 Too Many Requests.
-- Keys are remembered for 24 hours.
+- Keys are remembered for 24 hours, separately for each signed-in user: two users can use
+  the same key. A request with no signed-in user runs normally and its key is ignored.
 """
 
 import asyncio
 import hashlib
 import logging
 from collections.abc import Awaitable, Callable, Coroutine, MutableMapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
 
@@ -29,8 +30,13 @@ Message = MutableMapping[str, Any]
 Receive = Callable[[], Awaitable[Message]]
 Send = Callable[[Message], Awaitable[None]]
 ASGIApp = Callable[[Scope, Receive, Send], Awaitable[None]]
+PrincipalResolver = Callable[[Scope], Awaitable[str | None]]
+"""Who a request is for (keys are kept per principal), or None when nobody is signed in."""
 
 MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+SESSION_PATHS = "/v1/auth/"
+"""Sign-up, sign-in and sign-out change who the caller is, so an answer kept for the old
+caller would be wrong for the new one: keys are ignored there (each documents its retry)."""
 KEY_HEADER = b"idempotency-key"
 REPLAYED_HEADER = (b"idempotent-replayed", b"true")
 KEPT_FOR = timedelta(hours=24)
@@ -156,7 +162,11 @@ class IdempotencyMiddleware:
         self.app = app
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] != "http" or scope["method"] not in MUTATING_METHODS:
+        if (
+            scope["type"] != "http"
+            or scope["method"] not in MUTATING_METHODS
+            or scope["path"].startswith(SESSION_PATHS)
+        ):
             await self.app(scope, receive, send)
             return
         raw_key = dict(scope["headers"]).get(KEY_HEADER)
@@ -173,8 +183,10 @@ class IdempotencyMiddleware:
                 400, "invalid_idempotency_key", "Idempotency-Key must be 1-255 ASCII characters."
             )
             return
-        store: IdempotencyStore | None = getattr(scope["app"].state, "idempotency_store", None)
-        if store is None:
+        state = scope["app"].state
+        store: IdempotencyStore | None = getattr(state, "idempotency_store", None)
+        resolve: PrincipalResolver | None = getattr(state, "principal_resolver", None)
+        if store is None or resolve is None:
             await answer(503, "idempotency_unavailable", "Idempotency-Key cannot be honoured now.")
             return
 
@@ -194,7 +206,18 @@ class IdempotencyMiddleware:
                 return
         body = b"".join(parts)
 
-        owner = "anonymous"  # who sent it; accounts arrive in T-06
+        try:
+            owner = await resolve(scope)
+        except Exception:
+            log.exception("could not tell who sent a request with an idempotency key")
+            await answer(503, "idempotency_unavailable", "Idempotency-Key cannot be honoured now.")
+            return
+        if owner is None:
+            # Nobody to keep the key for. Keys cannot be shared between anonymous callers
+            # (one could replay another's answer), so the request simply runs. The routes
+            # open to anonymous callers (sign-up, sign-in) say how to retry safely.
+            await self.app(scope, _replaying(body, receive), send)
+            return
         method, path = scope["method"], scope["path"]
         now = datetime.now(UTC)
         result = await store.begin(
@@ -221,17 +244,6 @@ class IdempotencyMiddleware:
     async def _run_first(
         self, scope: Scope, body: bytes, receive: Receive, send: Send, claim: "_Claim"
     ) -> None:
-        delivered = False
-
-        async def replay_body() -> Message:
-            # The body was already read; hand it over once, then pass the real channel on so
-            # the app still learns when the client disconnects.
-            nonlocal delivered
-            if delivered:
-                return await receive()
-            delivered = True
-            return {"type": "http.request", "body": body, "more_body": False}
-
         status = 500
         headers: list[tuple[bytes, bytes]] = []
         chunks: list[bytes] = []
@@ -253,7 +265,7 @@ class IdempotencyMiddleware:
                     await _finish(status, headers, b"".join(chunks), send, claim)
 
         try:
-            await self.app(scope, replay_body, capture)
+            await self.app(scope, _replaying(body, receive), capture)
         except BaseException:
             # Failing after the answer was sent (a background task) leaves the key done: the
             # request's effects already happened and a retry must not repeat them.
@@ -262,6 +274,21 @@ class IdempotencyMiddleware:
             raise
         if not answered:
             await claim.release()
+
+
+def _replaying(body: bytes, receive: Receive) -> Receive:
+    """The body was already read: hand it over once, then pass the real channel on, so the
+    app still learns when the client disconnects."""
+    delivered = False
+
+    async def replay() -> Message:
+        nonlocal delivered
+        if delivered:
+            return await receive()
+        delivered = True
+        return {"type": "http.request", "body": body, "more_body": False}
+
+    return replay
 
 
 @dataclass(frozen=True)
@@ -319,20 +346,23 @@ async def wait_for_pending_keys(timeout: float = 5) -> None:
 async def _finish(
     status: int, headers: list[tuple[bytes, bytes]], body: bytes, send: Send, claim: _Claim
 ) -> None:
-    stored = StoredResponse(
+    live = StoredResponse(
         status_code=status,
         headers=[
             (name.decode("latin-1"), value.decode("latin-1"))
             for name, value in headers
-            if name.lower() not in (b"content-length", b"set-cookie")
+            if name.lower() != b"content-length"
         ],
         body=body,
     )
     if remembered(status):
-        await claim.complete(stored)
+        # Cookies go to this client only: a replay must not hand out a session again.
+        await claim.complete(
+            replace(live, headers=[(n, v) for n, v in live.headers if n.lower() != "set-cookie"])
+        )
     else:
         await claim.release()
-    await _send_stored(stored, send, replayed=False)
+    await _send_stored(live, send, replayed=False)
 
 
 async def _send_stored(response: StoredResponse, send: Send, replayed: bool = True) -> None:
