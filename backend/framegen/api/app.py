@@ -7,7 +7,7 @@ from fastapi import FastAPI, Request, Response, status
 from pydantic import BaseModel
 
 from framegen import __version__
-from framegen.api import auth, workspaces
+from framegen.api import assets, auth, workspaces
 from framegen.api.errors import ERROR_RESPONSES, install_error_handlers
 from framegen.api.idempotency import (
     IdempotencyMiddleware,
@@ -20,6 +20,7 @@ from framegen.db.idempotency_store import PostgresIdempotencyStore
 from framegen.health import Check, Readiness, default_checks
 from framegen.project import LICENSE_ID, SOURCE_URL
 from framegen.settings import Settings, get_settings
+from framegen.storage.client import presign_client, s3_client
 
 
 class Health(BaseModel):
@@ -72,6 +73,9 @@ def create_app(
         app.state.engine = engine
         app.state.idempotency_store = idempotency_store or PostgresIdempotencyStore(engine)
         app.state.principal_resolver = principal_resolver or auth.principal_from_session
+        # Neither connects until used.
+        app.state.storage = s3_client(app_settings)
+        app.state.presigner = presign_client(app_settings)
         try:
             yield
         finally:
@@ -100,6 +104,7 @@ def create_app(
     app.add_middleware(IdempotencyMiddleware)
     app.include_router(auth.router)
     app.include_router(workspaces.router)
+    app.include_router(assets.router)
 
     @app.get("/v1/health", operation_id="getHealth", tags=["system"])
     def health() -> Health:

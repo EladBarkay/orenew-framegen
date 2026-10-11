@@ -27,6 +27,19 @@ jobs:
           --health-interval 2s
           --health-timeout 5s
           --health-retries 30
+      storage:
+        image: rustfs/rustfs:1.0.1
+        env:
+          RUSTFS_ACCESS_KEY: framegen
+          RUSTFS_SECRET_KEY: framegen-dev-secret
+          RUSTFS_ADDRESS: :9000
+        ports:
+          - 9000:9000
+        options: >-
+          --health-cmd "curl -fsS http://localhost:9000/health || exit 1"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
     defaults:
       run:
         working-directory: backend
@@ -42,10 +55,11 @@ jobs:
         run: uv run ruff format --check .
       - name: Type check
         run: uv run mypy
-      - name: Tests (including the Postgres ones)
+      - name: Tests (including the Postgres and storage ones)
         run: uv run pytest
         env:
           FRAMEGEN_TEST_POSTGRES: "1"
+          FRAMEGEN_TEST_STORAGE: "1"
 
   node:
     name: Web, SDK and psd-writer (Node)
@@ -100,6 +114,8 @@ jobs:
           if curl --silent http://localhost:8080/internal/health/ready | grep -q '"checks"'; then
             echo "::error::readiness is reachable through the public entrance"; exit 1
           fi
+      - name: Upload and download a file through the public entrance
+        run: deploy/smoke-upload.sh http://localhost:8080
       - name: Logs
         if: failure()
         run: docker compose -f deploy/compose.yaml logs

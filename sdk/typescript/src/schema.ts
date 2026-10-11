@@ -173,6 +173,67 @@ export interface paths {
         patch: operations["updateWorkspace"];
         trace?: never;
     };
+    "/v1/workspaces/{workspace_id}/assets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Assets
+         * @description Ready assets of the workspace, oldest first.
+         */
+        get: operations["listAssets"];
+        put?: never;
+        /**
+         * Create Asset
+         * @description Start an upload: returns the asset (pending) and where to upload the file.
+         */
+        post: operations["createAsset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/assets/{asset_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Asset */
+        get: operations["getAsset"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/assets/{asset_id}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Complete Asset
+         * @description Confirm an upload. Safe to repeat: a ready asset is simply returned.
+         */
+        post: operations["completeAsset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/workspaces/{workspace_id}/invitations": {
         parameters: {
             query?: never;
@@ -261,6 +322,82 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** Asset */
+        Asset: {
+            /**
+             * Content Type
+             * @enum {string}
+             */
+            content_type: "image/png" | "image/jpeg" | "image/webp" | "image/heic" | "image/tiff" | "image/vnd.adobe.photoshop" | "application/pdf" | "image/svg+xml" | "font/ttf" | "font/otf" | "font/woff2";
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Download Url
+             * @description A link that downloads the file, valid for 15 minutes (ready assets).
+             */
+            download_url: string | null;
+            /** Filename */
+            filename: string;
+            /** Height */
+            height: number | null;
+            /** Id */
+            id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "reference" | "font" | "stamp" | "template-source" | "piece" | "render" | "package";
+            /** Sha256 */
+            sha256: string;
+            /** Size */
+            size: number;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "pending" | "ready";
+            /**
+             * Width
+             * @description Pixel width, when the file has one.
+             */
+            width: number | null;
+        };
+        /** AssetCreate */
+        AssetCreate: {
+            /**
+             * Content Type
+             * @enum {string}
+             */
+            content_type: "image/png" | "image/jpeg" | "image/webp" | "image/heic" | "image/tiff" | "image/vnd.adobe.photoshop" | "application/pdf" | "image/svg+xml" | "font/ttf" | "font/otf" | "font/woff2";
+            /**
+             * Filename
+             * @description The file's name.
+             */
+            filename: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "reference" | "font" | "stamp" | "template-source";
+            /**
+             * Sha256
+             * @description The content's SHA-256, hex.
+             */
+            sha256: string;
+            /**
+             * Size
+             * @description In bytes.
+             */
+            size: number;
+        };
+        /** CreatedAsset */
+        CreatedAsset: {
+            asset: components["schemas"]["Asset"];
+            upload: components["schemas"]["Upload"];
+        };
         /** CreatedInvitation */
         CreatedInvitation: {
             /**
@@ -373,6 +510,13 @@ export interface components {
              */
             role: "member" | "admin" | "owner";
         };
+        /** Page[Asset] */
+        Page_Asset_: {
+            /** Items */
+            items: components["schemas"]["Asset"][];
+            /** Next Cursor */
+            next_cursor: string | null;
+        };
         /** Page[Invitation] */
         Page_Invitation_: {
             /** Items */
@@ -409,6 +553,28 @@ export interface components {
             name: string;
             /** Password */
             password: string;
+        };
+        /** Upload */
+        Upload: {
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /**
+             * Headers
+             * @description Send exactly these headers with the upload.
+             */
+            headers: {
+                [key: string]: string;
+            };
+            /**
+             * Method
+             * @constant
+             */
+            method: "PUT";
+            /** Url */
+            url: string;
         };
         /** User */
         User: {
@@ -764,6 +930,149 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Workspace"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listAssets: {
+        parameters: {
+            query?: {
+                /** @description Only assets of this kind. */
+                kind?: ("reference" | "font" | "stamp" | "template-source" | "piece" | "render" | "package") | null;
+                /** @description Items per page. */
+                limit?: number;
+                /** @description The next_cursor of the previous page. */
+                cursor?: string | null;
+            };
+            header?: never;
+            path: {
+                /** @description The workspace's ID. */
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_Asset_"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createAsset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The workspace's ID. */
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssetCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatedAsset"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAsset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The asset's ID. */
+                asset_id: string;
+                /** @description The workspace's ID. */
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Asset"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    completeAsset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The asset's ID. */
+                asset_id: string;
+                /** @description The workspace's ID. */
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Asset"];
                 };
             };
             /** @description Error */

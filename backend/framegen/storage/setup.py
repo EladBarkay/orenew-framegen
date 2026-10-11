@@ -10,7 +10,7 @@ from botocore.exceptions import ClientError, HTTPClientError, ProxyConnectionErr
 from botocore.exceptions import ConnectionError as BotoConnectionError
 
 from framegen.settings import Settings, get_settings
-from framegen.storage.client import s3_client
+from framegen.storage.client import MISSING, error_code, s3_client
 
 if TYPE_CHECKING:
     from mypy_boto3_s3 import S3Client
@@ -24,7 +24,7 @@ def ensure_bucket(settings: Settings, client: S3Client) -> bool:
         client.head_bucket(Bucket=settings.s3_bucket)
         return False
     except ClientError as error:
-        if _error_code(error) not in ("404", "NoSuchBucket", "NotFound"):
+        if error_code(error) not in MISSING:
             raise
     try:
         if settings.s3_region == "us-east-1":
@@ -38,14 +38,10 @@ def ensure_bucket(settings: Settings, client: S3Client) -> bool:
     except ClientError as error:
         # Another setup run of ours created it between our check and our create.
         # (BucketAlreadyExists is not ours: on shared S3 another account owns that name.)
-        if _error_code(error) == "BucketAlreadyOwnedByYou":
+        if error_code(error) == "BucketAlreadyOwnedByYou":
             return False
         raise
     return True
-
-
-def _error_code(error: ClientError) -> str:
-    return str(error.response.get("Error", {}).get("Code", ""))
 
 
 def _is_transient(error: Exception) -> bool:

@@ -5,7 +5,7 @@ decision D2):
 
 | Service | What it is | Reachable at |
 |---|---|---|
-| `web` | Caddy serving the web app and forwarding `/v1` to the API | http://localhost:8080 |
+| `web` | Caddy serving the web app, forwarding `/v1` to the API and `/<bucket>/` to the storage | http://localhost:8080 |
 | `api` | FastAPI backend | through `web`, at `/v1` |
 | `worker` | Background jobs (the queue arrives in T-08) | — |
 | `psd-writer` | Internal PSD text-layer service (D8) | inside Compose only |
@@ -35,6 +35,13 @@ docker compose -f deploy/compose.yaml exec api python -c \
   `postgres-data` and `storage-data` volumes and is there on the next start.
 - Start from empty: `docker compose -f deploy/compose.yaml down --volumes`.
 - Ports are bound to `127.0.0.1` only.
+
+Files are uploaded and downloaded straight to and from the storage with pre-signed links
+(`DESIGN.md` section 6.2). The links point at the site itself (`FRAMEGEN_PUBLIC_URL`,
+`http://localhost:8080` by default), and Caddy forwards the bucket's path, `/framegen/`,
+to the storage. So browsers need only the one address, and the bucket's name is not
+available as a page path. When the site is reached at another address, set
+`FRAMEGEN_PUBLIC_URL` to it.
 
 The names, passwords and keys in `compose.yaml` are defaults for a developer's own
 machine. They can be overridden with environment variables (`FRAMEGEN_DB_NAME`,

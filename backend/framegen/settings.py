@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     s3_bucket: str = "framegen"
     s3_access_key: str = "framegen"
     s3_secret_key: SecretStr = SecretStr(DEV_S3_SECRET_KEY)
+    s3_public_url: str = "http://localhost:9000"
+    """Where browsers reach the storage, for pre-signed upload and download links. In the
+    Compose deployment this is the site itself: Caddy forwards /<bucket>/ to the storage.
+    The backend's own requests use s3_endpoint_url, inside the deployment."""
 
     @property
     def database_url(self) -> URL:
