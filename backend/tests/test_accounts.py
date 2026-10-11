@@ -5,9 +5,12 @@ from collections.abc import Iterator
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import insert
 
 from framegen.api.app import create_app
 from framegen.api.auth import SESSION_COOKIE
+from framegen.db.engine import sync_engine
+from framegen.db.tables import memberships
 from framegen.settings import Settings
 
 PASSWORD = "correct horse battery"
@@ -136,10 +139,9 @@ def test_requests_from_another_site_are_refused(client: TestClient) -> None:
     )
     assert response.status_code == 403
     assert response.json()["error"]["code"] == "cross_site_request"
-    same_site = client.post(
-        "/v1/workspaces", json={"name": "X"}, headers={"Origin": "http://testserver"}
-    )
-    assert same_site.status_code == 201
+    for origin in ("http://testserver", "HTTP://TestServer:80"):
+        same_site = client.post("/v1/workspaces", json={"name": "X"}, headers={"Origin": origin})
+        assert same_site.status_code == 201, origin
 
 
 def test_a_member_cannot_reach_another_workspace(client: TestClient) -> None:
@@ -305,3 +307,67 @@ def test_two_users_can_use_the_same_idempotency_key(client: TestClient) -> None:
     assert theirs.status_code == 201
     assert "Idempotent-Replayed" not in theirs.headers
     assert theirs.json()["id"] != made.json()["id"]
+
+
+def test_switching_accounts_with_an_idempotency_key_still_sets_the_cookie(
+    client: TestClient,
+) -> None:
+    other_email = new_email()
+    sign_up(client, other_email, name="Other")
+    client.post("/v1/auth/signout")
+    first = sign_up(client)
+    switched = client.post(
+        "/v1/auth/signin",
+        json={"email": other_email, "password": PASSWORD},
+        headers={"Idempotency-Key": "switch"},
+    )
+    assert "set-cookie" in switched.headers
+    assert client.get("/v1/me").json()["email"] == other_email
+
+    act_as(client, first)
+    client.post("/v1/auth/signout", headers={"Idempotency-Key": "out"})
+    assert client.get("/v1/me").status_code == 401
+
+
+def test_a_new_invitation_replaces_the_old_one(client: TestClient) -> None:
+    sign_up(client)
+    workspace_id = studio(client)
+    email = new_email()
+    path = f"/v1/workspaces/{workspace_id}/invitations"
+    old = client.post(path, json={"email": email, "role": "member"}).json()
+    new = client.post(path, json={"email": email, "role": "admin"}).json()
+    pending = client.get(path).json()["items"]
+    assert [(i["id"], i["role"]) for i in pending] == [(new["id"], "admin")]
+
+    sign_up(client, email)
+    stale = client.post("/v1/invitations/accept", json={"token": old["token"]})
+    assert stale.json()["error"]["code"] == "invitation_not_found"
+    assert client.post("/v1/invitations/accept", json={"token": new["token"]}).json()["role"] == (
+        "admin"
+    )
+
+
+def test_accepting_when_already_a_member_is_refused(client: TestClient, settings: Settings) -> None:
+    owner = sign_up(client)
+    workspace_id = studio(client)
+    email = new_email()
+    token = client.post(
+        f"/v1/workspaces/{workspace_id}/invitations", json={"email": email, "role": "admin"}
+    ).json()["token"]
+    member = sign_up(client, email)
+    # They became a member some other way meanwhile (a race with another invitation).
+    engine = sync_engine(settings)
+    with engine.begin() as conn:
+        conn.execute(
+            insert(memberships).values(
+                workspace_id=workspace_id, user_id=user_id(client, member), role="member"
+            )
+        )
+    engine.dispose()
+
+    act_as(client, member)
+    refused = client.post("/v1/invitations/accept", json={"token": token})
+    assert refused.json()["error"]["code"] == "already_member"
+    assert client.get(f"/v1/workspaces/{workspace_id}").json()["role"] == "member"
+    act_as(client, owner)
+    assert client.get(f"/v1/workspaces/{workspace_id}/invitations").json()["items"] == []

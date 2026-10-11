@@ -11,6 +11,7 @@ from sqlalchemy import (
     MetaData,
     String,
     Table,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -101,5 +102,5 @@ invitations = Table(
     Column("created_at", DateTime(timezone=True), nullable=False),
     Column("expires_at", DateTime(timezone=True), nullable=False),
     CheckConstraint("role IN ('owner', 'admin', 'member')", name="role"),
-    Index("ix_invitations_workspace_id", "workspace_id"),
+    UniqueConstraint("workspace_id", "email", name="uq_invitations_workspace_id_email"),
 )

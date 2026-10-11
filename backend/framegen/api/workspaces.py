@@ -27,7 +27,7 @@ from framegen.api.access import (
 )
 from framegen.api.auth import Engine, SignedIn, User, normalise_email, token_hash
 from framegen.api.errors import ApiError
-from framegen.api.pagination import DEFAULT_LIMIT, Cursor, Limit, Page, decode_cursor, encode_cursor
+from framegen.api.pagination import DEFAULT_LIMIT, Cursor, Limit, Page, after_key, keyset_page
 from framegen.db.tables import invitations, memberships, users, workspaces
 from framegen.ids import new_id
 
@@ -100,7 +100,7 @@ async def list_workspaces(
     user: SignedIn, engine: Engine, limit: Limit = DEFAULT_LIMIT, cursor: Cursor = None
 ) -> Page[Workspace]:
     """The workspaces the signed-in user belongs to, with their role in each."""
-    after = str(decode_cursor(cursor).get("after", "")) if cursor else ""
+    after = after_key(cursor)
     query = (
         select(workspaces.c.id, workspaces.c.name, workspaces.c.kind, memberships.c.role)
         .join(memberships, memberships.c.workspace_id == workspaces.c.id)
@@ -110,9 +110,8 @@ async def list_workspaces(
     )
     async with engine.connect() as conn:
         rows = (await conn.execute(query)).all()
-    items = [Workspace(id=r.id, name=r.name, kind=r.kind, role=r.role) for r in rows[:limit]]
-    more = len(rows) > limit
-    return Page(items=items, next_cursor=encode_cursor({"after": items[-1].id}) if more else None)
+    items = [Workspace(id=r.id, name=r.name, kind=r.kind, role=r.role) for r in rows]
+    return keyset_page(items, limit, lambda w: w.id)
 
 
 @router.post("/v1/workspaces", operation_id="createWorkspace", status_code=status.HTTP_201_CREATED)
@@ -148,7 +147,7 @@ async def update_workspace(body: WorkspaceUpdate, access: AdminAccess, engine: E
 async def list_members(
     access: MemberAccess, engine: Engine, limit: Limit = DEFAULT_LIMIT, cursor: Cursor = None
 ) -> Page[Member]:
-    after = str(decode_cursor(cursor).get("after", "")) if cursor else ""
+    after = after_key(cursor)
     query = (
         _member_query(access.workspace_id)
         .where(users.c.id > after)
@@ -157,11 +156,7 @@ async def list_members(
     )
     async with engine.connect() as conn:
         rows = (await conn.execute(query)).all()
-    items = [_member(row) for row in rows[:limit]]
-    more = len(rows) > limit
-    return Page(
-        items=items, next_cursor=encode_cursor({"after": items[-1].user.id}) if more else None
-    )
+    return keyset_page([_member(row) for row in rows], limit, lambda m: m.user.id)
 
 
 @router.patch("/v1/workspaces/{workspace_id}/members/{user_id}", operation_id="updateMember")
@@ -241,21 +236,21 @@ async def create_invitation(
         )
         if already.first() is not None:
             raise ApiError(409, "already_member", "This person is already a member.")
+        # One invitation per address and workspace (a unique constraint): a new one replaces
+        # the old, also when two arrive at once.
+        replacing = {
+            "id": invitation.id,
+            "role": invitation.role,
+            "token_hash": token_hash(token),
+            "invited_by": access.user.id,
+            "created_at": invitation.created_at,
+            "expires_at": invitation.expires_at,
+        }
         await conn.execute(
-            delete(invitations)
-            .where(invitations.c.workspace_id == access.workspace_id)
-            .where(invitations.c.email == body.email)
-        )
-        await conn.execute(
-            insert(invitations).values(
-                id=invitation.id,
-                workspace_id=access.workspace_id,
-                email=invitation.email,
-                role=invitation.role,
-                token_hash=token_hash(token),
-                invited_by=access.user.id,
-                created_at=invitation.created_at,
-                expires_at=invitation.expires_at,
+            pg_insert(invitations)
+            .values(workspace_id=access.workspace_id, email=invitation.email, **replacing)
+            .on_conflict_do_update(
+                index_elements=[invitations.c.workspace_id, invitations.c.email], set_=replacing
             )
         )
     return invitation
@@ -266,7 +261,7 @@ async def list_invitations(
     access: AdminAccess, engine: Engine, limit: Limit = DEFAULT_LIMIT, cursor: Cursor = None
 ) -> Page[Invitation]:
     """Invitations not yet accepted and not expired (admins)."""
-    after = str(decode_cursor(cursor).get("after", "")) if cursor else ""
+    after = after_key(cursor)
     query = (
         select(invitations)
         .where(invitations.c.workspace_id == access.workspace_id)
@@ -280,10 +275,9 @@ async def list_invitations(
         Invitation(
             id=r.id, email=r.email, role=r.role, created_at=r.created_at, expires_at=r.expires_at
         )
-        for r in rows[:limit]
+        for r in rows
     ]
-    more = len(rows) > limit
-    return Page(items=items, next_cursor=encode_cursor({"after": items[-1].id}) if more else None)
+    return keyset_page(items, limit, lambda i: i.id)
 
 
 @router.delete(
@@ -326,14 +320,19 @@ async def accept_invitation(body: InvitationAccept, user: SignedIn, engine: Engi
                 "invitation_for_another_email",
                 "This invitation is for another email address; sign in with that one.",
             )
-        await conn.execute(
+        joined = await conn.execute(
             pg_insert(memberships)
             .values(workspace_id=found.workspace_id, user_id=user.id, role=found.role)
             .on_conflict_do_nothing()
+            .returning(memberships.c.role)
         )
         await conn.execute(delete(invitations).where(invitations.c.id == found.id))
-        role = await _locked_role(conn, found.workspace_id, user.id)
-    return Workspace(id=found.workspace_id, name=found.name, kind=found.kind, role=role)
+        already_member = joined.first() is None
+    if already_member:
+        # Checked after the commit: the invitation is used up either way, and the member's
+        # role is changed by an admin instead.
+        raise ApiError(409, "already_member", "You are already a member of this workspace.")
+    return Workspace(id=found.workspace_id, name=found.name, kind=found.kind, role=found.role)
 
 
 def _member_query(workspace_id: str) -> Select[tuple[str, str, str, str, str, datetime]]:
@@ -360,27 +359,28 @@ def _member(row: Row[tuple[str, str, str, str, str, datetime]]) -> Member:
 
 
 async def _locked_role(conn: AsyncConnection, workspace_id: str, user_id: str) -> Role:
-    """The member's role, locking the workspace's memberships until the transaction ends.
+    """The member's role, locking the workspace row until the transaction ends.
 
-    Locking every membership of the workspace serialises role changes, so two owners
-    demoting each other at once cannot leave the workspace without an owner.
+    Every role change and removal takes this lock first, so they run one at a time per
+    workspace: two owners demoting each other at once cannot leave it without an owner.
     """
-    rows = (
+    await conn.execute(
+        select(workspaces.c.id).where(workspaces.c.id == workspace_id).with_for_update()
+    )
+    role: Role | None = (
         await conn.execute(
-            select(memberships.c.user_id, memberships.c.role)
+            select(memberships.c.role)
             .where(memberships.c.workspace_id == workspace_id)
-            .with_for_update()
+            .where(memberships.c.user_id == user_id)
         )
-    ).all()
-    for row in rows:
-        if row.user_id == user_id:
-            role: Role = row.role
-            return role
-    raise ApiError(404, "member_not_found", "No such member in this workspace.")
+    ).scalar_one_or_none()
+    if role is None:
+        raise ApiError(404, "member_not_found", "No such member in this workspace.")
+    return role
 
 
 async def _keep_an_owner(conn: AsyncConnection, workspace_id: str) -> None:
-    """Refuse a change that would remove the workspace's last owner (rows already locked)."""
+    """Refuse a change that would remove the workspace's last owner (workspace locked)."""
     owners = (
         await conn.execute(
             select(func.count())

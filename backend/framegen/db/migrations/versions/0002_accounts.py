@@ -74,8 +74,8 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_invitations")),
         sa.UniqueConstraint("token_hash", name=op.f("uq_invitations_token_hash")),
+        sa.UniqueConstraint("workspace_id", "email", name="uq_invitations_workspace_id_email"),
     )
-    op.create_index("ix_invitations_workspace_id", "invitations", ["workspace_id"], unique=False)
     op.create_table(
         "memberships",
         sa.Column("workspace_id", sa.String(length=40), nullable=False),
@@ -123,7 +123,6 @@ def downgrade() -> None:
     op.drop_table("sessions")
     op.drop_index("ix_memberships_user_id", table_name="memberships")
     op.drop_table("memberships")
-    op.drop_index("ix_invitations_workspace_id", table_name="invitations")
     op.drop_table("invitations")
     op.drop_table("workspaces")
     op.drop_table("users")

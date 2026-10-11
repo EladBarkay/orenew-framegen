@@ -316,3 +316,23 @@ def test_without_a_signed_in_user_the_key_is_ignored() -> None:
     assert calls == [1, 1]
     assert "Idempotent-Replayed" not in again.headers
     assert store.entries == {}
+
+
+def test_if_the_sender_cannot_be_told_the_key_is_refused_cleanly() -> None:
+    async def broken(scope: object) -> str | None:
+        raise ConnectionError("database went away")
+
+    calls: list[int] = []
+    app = create_app(
+        readiness_checks={}, idempotency_store=MemoryIdempotencyStore(), principal_resolver=broken
+    )
+
+    @app.post("/v1/things")
+    def make() -> None:
+        calls.append(1)
+
+    with TestClient(app) as client:
+        response = client.post("/v1/things", headers={"Idempotency-Key": "k"})
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "idempotency_unavailable"
+    assert calls == []

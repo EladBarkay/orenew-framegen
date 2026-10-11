@@ -9,6 +9,7 @@ import base64
 import binascii
 import json
 import re
+from collections.abc import Callable
 from typing import Annotated, Any
 
 from fastapi import Query
@@ -51,3 +52,21 @@ def decode_cursor(cursor: str) -> dict[str, Any]:
     if not isinstance(position, dict):
         raise ApiError(400, "invalid_cursor", "The cursor is not valid.")
     return position
+
+
+def after_key(cursor: str | None) -> str:
+    """For lists ordered by one text key: the key to continue after ("" for the first page)."""
+    if not cursor:
+        return ""
+    after = decode_cursor(cursor).get("after")
+    if not isinstance(after, str):
+        raise ApiError(400, "invalid_cursor", "The cursor is not valid.")
+    return after
+
+
+def keyset_page[T](items: list[T], limit: int, key: Callable[[T], str]) -> Page[T]:
+    """A page from up to ``limit + 1`` items fetched in key order; the extra one only shows
+    that another page exists."""
+    page = items[:limit]
+    more = len(items) > limit
+    return Page(items=page, next_cursor=encode_cursor({"after": key(page[-1])}) if more else None)

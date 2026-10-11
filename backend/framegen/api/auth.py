@@ -136,11 +136,27 @@ async def principal_from_session(scope: Any) -> str | None:
     return f"user:{user.id}" if user else None
 
 
+def _site(host: str) -> str:
+    """``host[:port]`` lower-cased, without the default ports, so equal sites compare equal."""
+    host = host.strip().lower()
+    for default in (":443", ":80"):
+        if host.endswith(default):
+            return host.removesuffix(default)
+    return host
+
+
 def require_same_site(request: Request) -> None:
+    """Refuse a state-changing request sent from another site.
+
+    Compares the browser's ``Origin`` with the ``Host`` the request was sent to. Caddy, the
+    entrance in every deployment, passes the original Host through unchanged.
+    """
     if request.method in SAFE_METHODS:
         return
     origin = request.headers.get("origin")
-    if origin is not None and urlsplit(origin).netloc != request.headers.get("host"):
+    if origin is None:
+        return  # not sent by a browser script (curl, server-side clients)
+    if _site(urlsplit(origin).netloc) != _site(request.headers.get("host", "")):
         raise ApiError(403, "cross_site_request", "Requests from other sites are not accepted.")
 
 
@@ -210,7 +226,12 @@ async def _start_session(
 
 @router.post("/v1/auth/signup", operation_id="signUp", status_code=status.HTTP_201_CREATED)
 async def sign_up(body: SignUp, response: Response, engine: Engine, settings: AppSettings) -> User:
-    """Create an account with its personal workspace, and sign in."""
+    """Create an account with its personal workspace, and sign in.
+
+    Idempotency-Key does not apply here (nobody is signed in yet). If an answer is lost
+    and a retry gets 409 ``email_taken``, sign in with the same email and password: that
+    succeeds when the first attempt created the account.
+    """
     password_hash = await hash_password(body.password)
     user_id, workspace_id = new_id("usr"), new_id("wsp")
     try:

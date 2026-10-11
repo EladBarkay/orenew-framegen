@@ -17,7 +17,7 @@ import asyncio
 import hashlib
 import logging
 from collections.abc import Awaitable, Callable, Coroutine, MutableMapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
 
@@ -199,9 +199,16 @@ class IdempotencyMiddleware:
                 return
         body = b"".join(parts)
 
-        owner = await resolve(scope)
+        try:
+            owner = await resolve(scope)
+        except Exception:
+            log.exception("could not tell who sent a request with an idempotency key")
+            await answer(503, "idempotency_unavailable", "Idempotency-Key cannot be honoured now.")
+            return
         if owner is None:
-            # Nobody to keep the key for: sign-up and sign-in are safe to repeat anyway.
+            # Nobody to keep the key for. Keys cannot be shared between anonymous callers
+            # (one could replay another's answer), so the request simply runs. The routes
+            # open to anonymous callers (sign-up, sign-in) say how to retry safely.
             await self.app(scope, _replaying(body, receive), send)
             return
         method, path = scope["method"], scope["path"]
@@ -332,20 +339,23 @@ async def wait_for_pending_keys(timeout: float = 5) -> None:
 async def _finish(
     status: int, headers: list[tuple[bytes, bytes]], body: bytes, send: Send, claim: _Claim
 ) -> None:
-    stored = StoredResponse(
+    live = StoredResponse(
         status_code=status,
         headers=[
             (name.decode("latin-1"), value.decode("latin-1"))
             for name, value in headers
-            if name.lower() not in (b"content-length", b"set-cookie")
+            if name.lower() != b"content-length"
         ],
         body=body,
     )
     if remembered(status):
-        await claim.complete(stored)
+        # Cookies go to this client only: a replay must not hand out a session again.
+        await claim.complete(
+            replace(live, headers=[(n, v) for n, v in live.headers if n.lower() != "set-cookie"])
+        )
     else:
         await claim.release()
-    await _send_stored(stored, send, replayed=False)
+    await _send_stored(live, send, replayed=False)
 
 
 async def _send_stored(response: StoredResponse, send: Send, replayed: bool = True) -> None:
