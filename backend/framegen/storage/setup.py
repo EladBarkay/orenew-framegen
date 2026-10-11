@@ -1,7 +1,10 @@
 """Creates the storage bucket if it does not exist. Run once when the deployment starts."""
 
+from __future__ import annotations
+
 import logging
 import time
+from typing import TYPE_CHECKING
 
 from botocore.exceptions import ClientError, HTTPClientError
 from botocore.exceptions import ConnectionError as BotoConnectionError
@@ -9,12 +12,14 @@ from botocore.exceptions import ConnectionError as BotoConnectionError
 from framegen.settings import Settings, get_settings
 from framegen.storage.client import s3_client
 
+if TYPE_CHECKING:
+    from mypy_boto3_s3 import S3Client
+
 log = logging.getLogger("framegen.storage")
 
 
-def ensure_bucket(settings: Settings) -> bool:
+def ensure_bucket(settings: Settings, client: S3Client) -> bool:
     """Returns True if the bucket was created, False if it already existed."""
-    client = s3_client(settings)
     try:
         client.head_bucket(Bucket=settings.s3_bucket)
         return False
@@ -54,18 +59,21 @@ def _is_transient(error: Exception) -> bool:
 
 
 def main(attempts: int = 6, first_wait: float = 1.0) -> None:
-    """Creates the bucket, retrying while storage is starting up (about 30 s in all).
+    """Creates the bucket, retrying while storage is starting up.
 
+    Each try takes at most about 5 s (one request, 2 s to connect, 3 s to answer), and the
+    waits between tries double from 1 s, so six tries give up after about a minute.
     Errors that waiting cannot fix, such as wrong credentials, fail at once.
     """
     if attempts < 1:
         raise ValueError("attempts must be at least 1")
     logging.basicConfig(level=logging.INFO)
     settings = get_settings()
+    client = s3_client(settings, connect_timeout=2, read_timeout=3, total_attempts=1)
     wait = first_wait
     for attempt in range(1, attempts + 1):
         try:
-            created = ensure_bucket(settings)
+            created = ensure_bucket(settings, client)
         except Exception as error:
             if attempt == attempts or not _is_transient(error):
                 raise

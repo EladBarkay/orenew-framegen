@@ -17,7 +17,7 @@ def s3_client(
     *,
     connect_timeout: float = 3,
     read_timeout: float = 10,
-    max_attempts: int = 2,
+    total_attempts: int = 3,
 ) -> S3Client:
     """An S3 client for the configured storage.
 
@@ -33,7 +33,8 @@ def s3_client(
         aws_secret_access_key=settings.s3_secret_key.get_secret_value(),
         config=Config(
             s3={"addressing_style": "path"},
-            retries={"mode": "standard", "max_attempts": max_attempts},
+            # total_max_attempts counts the first try; botocore's max_attempts would not.
+            retries={"mode": "standard", "total_max_attempts": total_attempts},
             connect_timeout=connect_timeout,
             read_timeout=read_timeout,
         ),

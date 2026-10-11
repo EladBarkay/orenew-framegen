@@ -17,7 +17,7 @@ Check = Callable[[], None]
 """A check returns normally when the dependency works and raises when it does not."""
 
 DEADLINE_SECONDS = 3.0
-"""All checks together answer within this, below the 5 s health-check timeout in Compose."""
+"""Readiness answers within this; a check still running then is reported unavailable."""
 
 
 def database_check(settings: Settings) -> Check:
@@ -37,8 +37,8 @@ def database_check(settings: Settings) -> Check:
 
 
 def storage_check(settings: Settings) -> Check:
-    # No retries, and timeouts that add up to less than the deadline.
-    client = s3_client(settings, connect_timeout=1, read_timeout=1.5, max_attempts=1)
+    # One try, with timeouts that add up to less than the deadline.
+    client = s3_client(settings, connect_timeout=1, read_timeout=1.5, total_attempts=1)
 
     def check() -> None:
         client.head_bucket(Bucket=settings.s3_bucket)

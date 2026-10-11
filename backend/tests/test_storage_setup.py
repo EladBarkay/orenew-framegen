@@ -9,7 +9,7 @@ from framegen.storage import setup
 def test_storage_init_retries_until_storage_answers(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[int] = []
 
-    def flaky_ensure_bucket(settings: object) -> bool:
+    def flaky_ensure_bucket(settings: object, client: object) -> bool:
         calls.append(1)
         if len(calls) < 3:
             raise EndpointConnectionError(endpoint_url="http://storage:9000")
@@ -21,7 +21,7 @@ def test_storage_init_retries_until_storage_answers(monkeypatch: pytest.MonkeyPa
 
 
 def test_storage_init_gives_up_after_the_last_attempt(monkeypatch: pytest.MonkeyPatch) -> None:
-    def broken(settings: object) -> bool:
+    def broken(settings: object, client: object) -> bool:
         raise EndpointConnectionError(endpoint_url="http://storage:9000")
 
     monkeypatch.setattr(setup, "ensure_bucket", broken)
@@ -32,7 +32,7 @@ def test_storage_init_gives_up_after_the_last_attempt(monkeypatch: pytest.Monkey
 def test_errors_that_waiting_cannot_fix_fail_at_once(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[int] = []
 
-    def forbidden(settings: object) -> bool:
+    def forbidden(settings: object, client: object) -> bool:
         calls.append(1)
         response: Any = {"Error": {"Code": "403"}, "ResponseMetadata": {"HTTPStatusCode": 403}}
         raise ClientError(response, "HeadBucket")
@@ -46,7 +46,7 @@ def test_errors_that_waiting_cannot_fix_fail_at_once(monkeypatch: pytest.MonkeyP
 def test_wrong_settings_are_not_retried(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[int] = []
 
-    def invalid(settings: object) -> bool:
+    def invalid(settings: object, client: object) -> bool:
         calls.append(1)
         raise ParamValidationError(report="Invalid bucket name")
 

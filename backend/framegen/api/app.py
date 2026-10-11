@@ -22,17 +22,21 @@ class ReadinessReport(BaseModel):
 
 
 def configure_logging() -> None:
-    """Show FrameGen's own INFO messages when nothing else has set up logging.
+    """Show FrameGen's own INFO messages. Runs at application startup, not on import.
 
-    uvicorn only configures its own loggers. Runs at application startup, not on import.
+    uvicorn only configures its own loggers. If the host configured logging (a root
+    handler), FrameGen's messages go there; otherwise FrameGen prints them itself, and does
+    not also pass them on, so nothing is printed twice.
     """
     logger = logging.getLogger("framegen")
+    if logger.level == logging.NOTSET:
+        logger.setLevel(logging.INFO)
     if logger.handlers or logging.getLogger().handlers:
         return
     handler = logging.StreamHandler()
     handler.setFormatter(logging.Formatter("%(levelname)s:%(name)s:%(message)s"))
     logger.addHandler(handler)
-    logger.setLevel(logging.INFO)
+    logger.propagate = False
 
 
 def create_app(readiness_checks: Mapping[str, Check] | None = None) -> FastAPI:
