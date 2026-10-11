@@ -1,0 +1,27 @@
+{
+  "name": "@framegen/sdk",
+  "version": "0.1.0",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "description": "TypeScript client for the FrameGen API, generated from its OpenAPI document.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "openapi.json"
+  ],
+  "scripts": {
+    "generate": "cd ../../backend && uv run framegen-openapi ../sdk/typescript/openapi.json && cd ../sdk/typescript && openapi-typescript openapi.json -o src/schema.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "check": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "openapi-fetch": "^0.17.0"
+  },
+  "devDependencies": {
+    "openapi-typescript": "^7.13.0",
+    "vitest": "^5.0.3"
+  }
+}

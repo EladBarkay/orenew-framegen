@@ -1,0 +1,31 @@
+{
+  "name": "framegen",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=22.17"
+  },
+  "scripts": {
+    "sdk:generate": "pnpm --filter @framegen/sdk run generate",
+    "sdk:build": "pnpm --filter @framegen/sdk run build",
+    "check": "pnpm sdk:build && pnpm -r run check",
+    "lint": "eslint .",
+    "test": "pnpm sdk:build && pnpm -r run test",
+    "build": "pnpm -r run build",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.12.0",
+    "eslint-plugin-svelte": "^3.23.1",
+    "globals": "^17.13.0",
+    "prettier": "^3.9.10",
+    "prettier-plugin-svelte": "^4.1.1",
+    "svelte": "^5.57.2",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.71.1"
+  }
+}
