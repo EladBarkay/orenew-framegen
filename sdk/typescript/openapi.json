@@ -554,7 +554,7 @@
     },
     "/v1/auth/signup": {
       "post": {
-        "description": "Create an account with its personal workspace, and sign in.\n\nIdempotency-Key does not apply here (nobody is signed in yet). If an answer is lost\nand a retry gets 409 ``email_taken``, sign in with the same email and password: that\nsucceeds when the first attempt created the account.",
+        "description": "Create an account with its personal workspace, and sign in.\n\nIdempotency-Key is ignored on sign-up, sign-in and sign-out, which change who the\ncaller is. If an answer is lost and a retry gets 409 ``email_taken``, sign in with the\nsame email and password: that succeeds when the first attempt created the account.",
         "operationId": "signUp",
         "requestBody": {
           "content": {

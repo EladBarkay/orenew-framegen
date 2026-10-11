@@ -1,5 +1,6 @@
 """Accounts, sessions, workspaces, roles and invitations, against a real Postgres."""
 
+import asyncio
 import uuid
 from collections.abc import Iterator
 
@@ -7,9 +8,11 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import insert
 
+import framegen.api.workspaces as workspaces_module
+from framegen.api.access import WorkspaceAccess
 from framegen.api.app import create_app
-from framegen.api.auth import SESSION_COOKIE
-from framegen.db.engine import sync_engine
+from framegen.api.auth import SESSION_COOKIE, CurrentUser
+from framegen.db.engine import async_engine, sync_engine
 from framegen.db.tables import memberships
 from framegen.settings import Settings
 
@@ -323,6 +326,15 @@ def test_switching_accounts_with_an_idempotency_key_still_sets_the_cookie(
     )
     assert "set-cookie" in switched.headers
     assert client.get("/v1/me").json()["email"] == other_email
+    # Keys do not apply to session routes: a repeat runs again and sets a cookie again.
+    act_as(client, first)
+    repeat = client.post(
+        "/v1/auth/signin",
+        json={"email": other_email, "password": PASSWORD},
+        headers={"Idempotency-Key": "switch"},
+    )
+    assert "set-cookie" in repeat.headers
+    assert "Idempotent-Replayed" not in repeat.headers
 
     act_as(client, first)
     client.post("/v1/auth/signout", headers={"Idempotency-Key": "out"})
@@ -366,8 +378,60 @@ def test_accepting_when_already_a_member_is_refused(client: TestClient, settings
     engine.dispose()
 
     act_as(client, member)
-    refused = client.post("/v1/invitations/accept", json={"token": token})
-    assert refused.json()["error"]["code"] == "already_member"
+    for _ in range(2):  # nothing changes, so a retry gets the same answer
+        refused = client.post("/v1/invitations/accept", json={"token": token})
+        assert refused.json()["error"]["code"] == "already_member"
     assert client.get(f"/v1/workspaces/{workspace_id}").json()["role"] == "member"
     act_as(client, owner)
-    assert client.get(f"/v1/workspaces/{workspace_id}/invitations").json()["items"] == []
+    pending = client.get(f"/v1/workspaces/{workspace_id}/invitations").json()["items"]
+    assert [i["email"] for i in pending] == [email]
+
+
+def test_an_invitation_stops_working_when_its_inviter_loses_the_role(
+    client: TestClient,
+) -> None:
+    first_owner = sign_up(client)
+    workspace_id = studio(client)
+    second_owner = invite_and_join(client, first_owner, workspace_id, "owner")
+    second_id = user_id(client, second_owner)
+    email = new_email()
+    token = client.post(
+        f"/v1/workspaces/{workspace_id}/invitations", json={"email": email, "role": "owner"}
+    ).json()["token"]
+
+    act_as(client, first_owner)
+    demoted = client.patch(
+        f"/v1/workspaces/{workspace_id}/members/{second_id}", json={"role": "admin"}
+    )
+    assert demoted.status_code == 200
+
+    sign_up(client, email)
+    refused = client.post("/v1/invitations/accept", json={"token": token})
+    assert refused.json()["error"]["code"] == "invitation_not_found"
+
+
+def test_the_callers_role_is_read_again_under_the_lock(
+    client: TestClient, settings: Settings
+) -> None:
+    owner = sign_up(client)
+    workspace_id = studio(client)
+    invite_and_join(client, owner, workspace_id)  # leaves the client signed in as them
+    me = client.get("/v1/me").json()
+    # As if the request was let in as an owner just before a demotion committed.
+    stale = WorkspaceAccess(
+        CurrentUser(me["id"], me["email"], me["name"], me["language"]),
+        workspace_id,
+        "Studio",
+        "studio",
+        "owner",
+    )
+
+    async def fresh_role() -> str:
+        engine = async_engine(settings)
+        try:
+            async with engine.begin() as conn:
+                return (await workspaces_module._lock(conn, stale)).role
+        finally:
+            await engine.dispose()
+
+    assert asyncio.run(fresh_role()) == "member"

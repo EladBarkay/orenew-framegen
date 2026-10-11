@@ -9,6 +9,7 @@ comes later). The invitee signs in with the invited address and accepts with the
 """
 
 import secrets
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
@@ -19,6 +20,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from framegen.api.access import (
+    RANK,
     AdminAccess,
     MemberAccess,
     Role,
@@ -165,7 +167,9 @@ async def update_member(
 ) -> Member:
     """Change a member's role (admins; making or unmaking an owner needs an owner)."""
     async with engine.begin() as conn:
-        current = await _locked_role(conn, access.workspace_id, user_id)
+        access = await _lock(conn, access)
+        access.require("admin")
+        current = await _role_of(conn, access.workspace_id, user_id)
         if "owner" in (current, body.role):
             access.require("owner")
         if current == "owner" and body.role != "owner":
@@ -190,7 +194,8 @@ async def update_member(
 async def remove_member(user_id: UserId, access: MemberAccess, engine: Engine) -> None:
     """Remove a member (admins; removing an owner needs an owner). Anyone may leave."""
     async with engine.begin() as conn:
-        current = await _locked_role(conn, access.workspace_id, user_id)
+        access = await _lock(conn, access)
+        current = await _role_of(conn, access.workspace_id, user_id)
         if user_id != access.user.id:
             access.require("owner" if current == "owner" else "admin")
         if current == "owner":
@@ -320,18 +325,28 @@ async def accept_invitation(body: InvitationAccept, user: SignedIn, engine: Engi
                 "invitation_for_another_email",
                 "This invitation is for another email address; sign in with that one.",
             )
+        await _lock_workspace(conn, found.workspace_id)
+        # An invitation is only as good as its inviter's role now: one from someone since
+        # removed or demoted no longer works.
+        inviter = (
+            await _member_role(conn, found.workspace_id, found.invited_by)
+            if found.invited_by
+            else None
+        )
+        needed: Role = "owner" if found.role == "owner" else "admin"
+        if inviter is None or RANK[inviter] < RANK[needed]:
+            raise ApiError(404, "invitation_not_found", "The invitation is unknown or expired.")
         joined = await conn.execute(
             pg_insert(memberships)
             .values(workspace_id=found.workspace_id, user_id=user.id, role=found.role)
             .on_conflict_do_nothing()
             .returning(memberships.c.role)
         )
+        if joined.first() is None:
+            # Nothing changes (the invitation stays for an admin to revoke), so a retry gets
+            # the same answer; the member's role is changed by an admin instead.
+            raise ApiError(409, "already_member", "You are already a member of this workspace.")
         await conn.execute(delete(invitations).where(invitations.c.id == found.id))
-        already_member = joined.first() is None
-    if already_member:
-        # Checked after the commit: the invitation is used up either way, and the member's
-        # role is changed by an admin instead.
-        raise ApiError(409, "already_member", "You are already a member of this workspace.")
     return Workspace(id=found.workspace_id, name=found.name, kind=found.kind, role=found.role)
 
 
@@ -358,15 +373,35 @@ def _member(row: Row[tuple[str, str, str, str, str, datetime]]) -> Member:
     )
 
 
-async def _locked_role(conn: AsyncConnection, workspace_id: str, user_id: str) -> Role:
-    """The member's role, locking the workspace row until the transaction ends.
+async def _lock_workspace(conn: AsyncConnection, workspace_id: str) -> None:
+    """Lock the workspace row until the transaction ends.
 
-    Every role change and removal takes this lock first, so they run one at a time per
+    Every change to memberships takes this lock first, so they run one at a time per
     workspace: two owners demoting each other at once cannot leave it without an owner.
     """
     await conn.execute(
         select(workspaces.c.id).where(workspaces.c.id == workspace_id).with_for_update()
     )
+
+
+async def _lock(conn: AsyncConnection, access: WorkspaceAccess) -> WorkspaceAccess:
+    """Lock the workspace, then re-read the caller's role: it may have changed since the
+    request was let in (a demotion or removal waiting on the same lock)."""
+    await _lock_workspace(conn, access.workspace_id)
+    role = await _member_role(conn, access.workspace_id, access.user.id)
+    if role is None:
+        raise ApiError(404, "workspace_not_found", "No such workspace.")
+    return replace(access, role=role)
+
+
+async def _role_of(conn: AsyncConnection, workspace_id: str, user_id: str) -> Role:
+    role = await _member_role(conn, workspace_id, user_id)
+    if role is None:
+        raise ApiError(404, "member_not_found", "No such member in this workspace.")
+    return role
+
+
+async def _member_role(conn: AsyncConnection, workspace_id: str, user_id: str) -> Role | None:
     role: Role | None = (
         await conn.execute(
             select(memberships.c.role)
@@ -374,8 +409,6 @@ async def _locked_role(conn: AsyncConnection, workspace_id: str, user_id: str) -
             .where(memberships.c.user_id == user_id)
         )
     ).scalar_one_or_none()
-    if role is None:
-        raise ApiError(404, "member_not_found", "No such member in this workspace.")
     return role
 
 

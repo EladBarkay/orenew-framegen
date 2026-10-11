@@ -57,9 +57,9 @@ export interface paths {
          * Sign Up
          * @description Create an account with its personal workspace, and sign in.
          *
-         *     Idempotency-Key does not apply here (nobody is signed in yet). If an answer is lost
-         *     and a retry gets 409 ``email_taken``, sign in with the same email and password: that
-         *     succeeds when the first attempt created the account.
+         *     Idempotency-Key is ignored on sign-up, sign-in and sign-out, which change who the
+         *     caller is. If an answer is lost and a retry gets 409 ``email_taken``, sign in with the
+         *     same email and password: that succeeds when the first attempt created the account.
          */
         post: operations["signUp"];
         delete?: never;

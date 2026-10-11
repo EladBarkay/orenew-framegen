@@ -228,9 +228,9 @@ async def _start_session(
 async def sign_up(body: SignUp, response: Response, engine: Engine, settings: AppSettings) -> User:
     """Create an account with its personal workspace, and sign in.
 
-    Idempotency-Key does not apply here (nobody is signed in yet). If an answer is lost
-    and a retry gets 409 ``email_taken``, sign in with the same email and password: that
-    succeeds when the first attempt created the account.
+    Idempotency-Key is ignored on sign-up, sign-in and sign-out, which change who the
+    caller is. If an answer is lost and a retry gets 409 ``email_taken``, sign in with the
+    same email and password: that succeeds when the first attempt created the account.
     """
     password_hash = await hash_password(body.password)
     user_id, workspace_id = new_id("usr"), new_id("wsp")

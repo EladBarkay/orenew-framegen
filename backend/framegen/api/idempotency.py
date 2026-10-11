@@ -34,6 +34,9 @@ PrincipalResolver = Callable[[Scope], Awaitable[str | None]]
 """Who a request is for (keys are kept per principal), or None when nobody is signed in."""
 
 MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+SESSION_PATHS = "/v1/auth/"
+"""Sign-up, sign-in and sign-out change who the caller is, so an answer kept for the old
+caller would be wrong for the new one: keys are ignored there (each documents its retry)."""
 KEY_HEADER = b"idempotency-key"
 REPLAYED_HEADER = (b"idempotent-replayed", b"true")
 KEPT_FOR = timedelta(hours=24)
@@ -159,7 +162,11 @@ class IdempotencyMiddleware:
         self.app = app
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] != "http" or scope["method"] not in MUTATING_METHODS:
+        if (
+            scope["type"] != "http"
+            or scope["method"] not in MUTATING_METHODS
+            or scope["path"].startswith(SESSION_PATHS)
+        ):
             await self.app(scope, receive, send)
             return
         raw_key = dict(scope["headers"]).get(KEY_HEADER)
