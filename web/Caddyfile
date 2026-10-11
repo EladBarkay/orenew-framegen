@@ -1,0 +1,15 @@
+# Serves the web app and forwards the API. FRAMEGEN_SITE_ADDRESS is ":80" by default;
+# in production it is the domain, and Caddy then gets HTTPS certificates itself (T-56).
+{$FRAMEGEN_SITE_ADDRESS::80} {
+	encode zstd gzip
+
+	handle /v1/* {
+		reverse_proxy {$FRAMEGEN_API_UPSTREAM:api:8000}
+	}
+
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}

@@ -1,0 +1,11 @@
+**/node_modules
+**/.venv
+**/dist
+**/build
+**/.svelte-kit
+**/__pycache__
+**/.mypy_cache
+**/.pytest_cache
+**/.ruff_cache
+.git
+.github

@@ -18,6 +18,27 @@
         ],
         "title": "Health",
         "type": "object"
+      },
+      "Readiness": {
+        "properties": {
+          "checks": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Checks",
+            "type": "object"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "checks"
+        ],
+        "title": "Readiness",
+        "type": "object"
       }
     }
   },
@@ -38,6 +59,7 @@
   "paths": {
     "/v1/health": {
       "get": {
+        "description": "Liveness: the API process is running.",
         "operationId": "getHealth",
         "responses": {
           "200": {
@@ -52,6 +74,38 @@
           }
         },
         "summary": "Health",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/v1/health/ready": {
+      "get": {
+        "description": "Readiness: the API can reach the database and storage.",
+        "operationId": "getReadiness",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Readiness"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Readiness"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Ready",
         "tags": [
           "system"
         ]

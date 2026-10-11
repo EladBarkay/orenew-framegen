@@ -1,0 +1,125 @@
+# FrameGen: every service, started with one command (DESIGN.md section 9, D2).
+#
+#   docker compose -f deploy/compose.yaml up --build
+#
+# Open http://localhost:8080. The defaults below are for a developer's own machine only.
+# Production (T-56) layers its own settings and secrets on top of this file.
+
+name: framegen
+
+x-backend: &backend
+  build:
+    context: ..
+    dockerfile: backend/Dockerfile
+  image: framegen-backend:local
+  environment:
+    FRAMEGEN_DATABASE_URL: postgresql://framegen:${FRAMEGEN_DB_PASSWORD:-framegen-dev}@postgres:5432/framegen
+    FRAMEGEN_S3_ENDPOINT_URL: http://storage:9000
+    FRAMEGEN_S3_BUCKET: ${FRAMEGEN_S3_BUCKET:-framegen}
+    FRAMEGEN_S3_ACCESS_KEY: ${FRAMEGEN_S3_ACCESS_KEY:-framegen}
+    FRAMEGEN_S3_SECRET_KEY: ${FRAMEGEN_S3_SECRET_KEY:-framegen-dev-secret}
+
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.1-pg17
+    environment:
+      POSTGRES_USER: framegen
+      POSTGRES_PASSWORD: ${FRAMEGEN_DB_PASSWORD:-framegen-dev}
+      POSTGRES_DB: framegen
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - 127.0.0.1:5432:5432
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U framegen -d framegen]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+
+  # S3-compatible file storage (D9).
+  storage:
+    image: rustfs/rustfs:1.0.1
+    environment:
+      RUSTFS_ACCESS_KEY: ${FRAMEGEN_S3_ACCESS_KEY:-framegen}
+      RUSTFS_SECRET_KEY: ${FRAMEGEN_S3_SECRET_KEY:-framegen-dev-secret}
+      RUSTFS_ADDRESS: :9000
+    volumes:
+      - storage-data:/data
+    ports:
+      - 127.0.0.1:9000:9000
+    healthcheck:
+      test: [CMD-SHELL, curl -fsS http://localhost:9000/health || exit 1]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+
+  # Creates the bucket on first start, then exits.
+  storage-init:
+    <<: *backend
+    command: [framegen-storage-init]
+    depends_on:
+      storage:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    <<: *backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+      storage-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        [
+          CMD,
+          python,
+          -c,
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/v1/health/ready')",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  worker:
+    <<: *backend
+    command: [framegen-worker]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      storage-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  # Internal only: writes PSD text layers (D8).
+  psd-writer:
+    build:
+      context: ..
+      dockerfile: services/psd-writer/Dockerfile
+    image: framegen-psd-writer:local
+    healthcheck:
+      test: [CMD, wget, -qO-, http://localhost:8090/health]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  # The web app and the public entrance: serves the app and forwards /v1 to the API.
+  web:
+    build:
+      context: ..
+      dockerfile: web/Dockerfile
+    image: framegen-web:local
+    ports:
+      - 127.0.0.1:8080:80
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  storage-data:

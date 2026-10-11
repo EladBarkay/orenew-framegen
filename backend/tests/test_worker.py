@@ -1,11 +1,15 @@
 import logging
+import threading
 
 import pytest
 
-from framegen.worker.main import main
+from framegen.worker.main import run
 
 
-def test_worker_starts(caplog: pytest.LogCaptureFixture) -> None:
+def test_worker_runs_until_stopped(caplog: pytest.LogCaptureFixture) -> None:
+    stop = threading.Event()
+    stop.set()
     with caplog.at_level(logging.INFO, logger="framegen.worker"):
-        main()
-    assert "worker" in caplog.text
+        run(stop)
+    assert "started" in caplog.text
+    assert "stopped" in caplog.text

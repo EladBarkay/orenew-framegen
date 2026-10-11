@@ -26,7 +26,16 @@ pnpm install                 # Node packages for web, SDK and psd-writer
 (cd backend && uv sync)      # Python packages for the backend
 ```
 
-Run the app locally:
+Run everything (database, storage, API, worker, web) in Docker with one command, then
+open http://localhost:8080 (see `deploy/README.md`):
+
+```sh
+docker compose -f deploy/compose.yaml up --build --wait
+```
+
+Or run the API and web app directly while developing (the API expects Postgres and
+storage, which you can start alone with
+`docker compose -f deploy/compose.yaml up -d postgres storage storage-init`):
 
 ```sh
 (cd backend && uv run uvicorn framegen.api.app:app --reload)   # API on :8000
