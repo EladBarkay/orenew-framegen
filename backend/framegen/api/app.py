@@ -7,6 +7,10 @@ from fastapi import FastAPI, Request, Response, status
 from pydantic import BaseModel
 
 from framegen import __version__
+from framegen.api.errors import ERROR_RESPONSES, install_error_handlers
+from framegen.api.idempotency import IdempotencyMiddleware, IdempotencyStore
+from framegen.db.engine import async_engine
+from framegen.db.idempotency_store import PostgresIdempotencyStore
 from framegen.health import Check, Readiness, default_checks
 from framegen.project import LICENSE_ID, SOURCE_URL
 from framegen.settings import get_settings
@@ -40,16 +44,30 @@ def configure_logging() -> None:
     logger.propagate = False
 
 
-def create_app(readiness_checks: Mapping[str, Check] | None = None) -> FastAPI:
+def create_app(
+    readiness_checks: Mapping[str, Check] | None = None,
+    idempotency_store: IdempotencyStore | None = None,
+) -> FastAPI:
+    """The API. Tests pass their own checks and store; otherwise both come from settings."""
+
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         configure_logging()
+        settings = get_settings()
         # Built once at startup and reused, so bad settings stop the API from starting.
-        checks = (
-            readiness_checks if readiness_checks is not None else default_checks(get_settings())
-        )
+        checks = readiness_checks if readiness_checks is not None else default_checks(settings)
         app.state.readiness = Readiness(checks)
-        yield
+        engine = None
+        if idempotency_store is None:
+            engine = async_engine(settings)
+            app.state.idempotency_store = PostgresIdempotencyStore(engine)
+        else:
+            app.state.idempotency_store = idempotency_store
+        try:
+            yield
+        finally:
+            if engine is not None:
+                await engine.dispose()
 
     app = FastAPI(
         title="FrameGen API",
@@ -67,7 +85,10 @@ def create_app(readiness_checks: Mapping[str, Check] | None = None) -> FastAPI:
         docs_url="/v1/docs",
         redoc_url=None,
         lifespan=lifespan,
+        responses=ERROR_RESPONSES,
     )
+    install_error_handlers(app)
+    app.add_middleware(IdempotencyMiddleware)
 
     @app.get("/v1/health", operation_id="getHealth", tags=["system"])
     def health() -> Health:

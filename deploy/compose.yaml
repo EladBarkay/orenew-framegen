@@ -70,6 +70,16 @@ services:
         condition: service_healthy
     restart: "no"
 
+  # Brings the database schema up to date, then exits.
+  migrate:
+    <<: *backend-image
+    environment: *backend-environment
+    command: [framegen-migrate]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
   api:
     build:
       context: ..
@@ -80,6 +90,8 @@ services:
       postgres:
         condition: service_healthy
       storage-init:
+        condition: service_completed_successfully
+      migrate:
         condition: service_completed_successfully
     # Liveness only, so a database or storage outage does not take the web app down with
     # it. Whether the API can reach them is GET /internal/health/ready (not public; CI uses it).
@@ -104,6 +116,8 @@ services:
       postgres:
         condition: service_healthy
       storage-init:
+        condition: service_completed_successfully
+      migrate:
         condition: service_completed_successfully
     restart: unless-stopped
 

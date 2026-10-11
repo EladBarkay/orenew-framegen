@@ -38,7 +38,7 @@ storage; start just those in Docker and create the bucket from the backend:
 
 ```sh
 docker compose -f deploy/compose.yaml up -d --wait postgres storage
-(cd backend && uv run framegen-storage-init)
+(cd backend && uv run framegen-storage-init && uv run framegen-migrate)
 ```
 
 Then:
@@ -51,7 +51,9 @@ pnpm --filter @framegen/web dev                                 # web app on :51
 Checks (the same ones CI runs on every pull request):
 
 ```sh
-cd backend && uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run pytest
+(cd backend && uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run pytest)
+# With Postgres running (see above), CI also runs the database tests:
+(cd backend && FRAMEGEN_TEST_POSTGRES=1 uv run pytest)
 pnpm format:check && pnpm lint && pnpm check && pnpm test && pnpm build
 ```
 
