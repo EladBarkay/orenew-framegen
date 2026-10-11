@@ -1,6 +1,7 @@
 import logging
-from collections.abc import Mapping
-from functools import cache
+import threading
+from collections.abc import AsyncIterator, Mapping
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Response, status
 from pydantic import BaseModel
@@ -21,14 +22,38 @@ class ReadinessReport(BaseModel):
     checks: dict[str, str]
 
 
+def configure_logging() -> None:
+    """Show FrameGen's own INFO messages when nothing else has set up logging.
+
+    uvicorn only configures its own loggers. Runs at application startup, not on import.
+    """
+    logger = logging.getLogger("framegen")
+    if logger.handlers or logging.getLogger().handlers:
+        return
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter("%(levelname)s:%(name)s:%(message)s"))
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+
+
 def create_app(readiness_checks: Mapping[str, Check] | None = None) -> FastAPI:
-    @cache
+    built: list[Readiness] = []
+    lock = threading.Lock()
+
     def readiness() -> Readiness:
         # Built once, on first use: the checks and their storage client are reused.
-        checks = (
-            readiness_checks if readiness_checks is not None else default_checks(get_settings())
-        )
-        return Readiness(checks)
+        with lock:
+            if not built:
+                checks = readiness_checks
+                if checks is None:
+                    checks = default_checks(get_settings())
+                built.append(Readiness(checks))
+            return built[0]
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        configure_logging()
+        yield
 
     app = FastAPI(
         title="FrameGen API",
@@ -45,6 +70,7 @@ def create_app(readiness_checks: Mapping[str, Check] | None = None) -> FastAPI:
         openapi_url="/v1/openapi.json",
         docs_url="/v1/docs",
         redoc_url=None,
+        lifespan=lifespan,
     )
 
     @app.get("/v1/health", operation_id="getHealth", tags=["system"])
@@ -58,9 +84,9 @@ def create_app(readiness_checks: Mapping[str, Check] | None = None) -> FastAPI:
         tags=["system"],
         responses={503: {"model": ReadinessReport}},
     )
-    def ready(response: Response) -> ReadinessReport:
+    async def ready(response: Response) -> ReadinessReport:
         """Readiness: the API can reach the database and storage."""
-        results = readiness().run()
+        results = await readiness().run()
         if all(result == "ok" for result in results.values()):
             return ReadinessReport(status="ready", checks=results)
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
@@ -69,15 +95,4 @@ def create_app(readiness_checks: Mapping[str, Check] | None = None) -> FastAPI:
     return app
 
 
-def configure_logging() -> None:
-    """Show FrameGen's own INFO messages next to uvicorn's (uvicorn only sets up its own)."""
-    logger = logging.getLogger("framegen")
-    if not logger.handlers:
-        handler = logging.StreamHandler()
-        handler.setFormatter(logging.Formatter("%(levelname)s:%(name)s:%(message)s"))
-        logger.addHandler(handler)
-        logger.setLevel(logging.INFO)
-
-
-configure_logging()
 app = create_app()

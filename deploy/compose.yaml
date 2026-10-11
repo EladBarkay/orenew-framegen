@@ -132,7 +132,8 @@ services:
       - caddy-config:/config
     healthcheck:
       # Caddy's admin endpoint, local to the container; works whatever the site address is.
-      test: [CMD, wget, -qO-, http://localhost:2019/config/]
+      # 127.0.0.1, not localhost: localhost can resolve to ::1, where the admin endpoint is not.
+      test: [CMD, wget, -qO-, http://127.0.0.1:2019/config/]
       interval: 2s
       timeout: 5s
       retries: 30

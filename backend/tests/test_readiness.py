@@ -1,11 +1,13 @@
+import asyncio
 import logging
 import threading
 
 import pytest
 from fastapi.testclient import TestClient
 
+from framegen.api import app as app_module
 from framegen.api.app import create_app
-from framegen.health import Readiness
+from framegen.health import Check, Readiness
 
 
 def ok() -> None:
@@ -30,23 +32,33 @@ def test_unavailable_names_the_failing_dependency() -> None:
     assert response.json()["checks"] == {"database": "ok", "storage": "unavailable"}
 
 
-def test_checks_are_built_once_and_reused() -> None:
-    calls: list[str] = []
-    client = TestClient(create_app(readiness_checks={"storage": lambda: calls.append("x")}))
+def test_default_checks_are_built_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    built: list[int] = []
+
+    def fake_default_checks(settings: object) -> dict[str, Check]:
+        built.append(1)
+        return {"storage": ok}
+
+    monkeypatch.setattr(app_module, "default_checks", fake_default_checks)
+    client = TestClient(create_app())
     client.get("/v1/health/ready")
     client.get("/v1/health/ready")
-    assert calls == ["x", "x"]
+    assert built == [1]
 
 
-def test_a_hung_check_is_cut_off_at_the_deadline() -> None:
+def test_a_hung_check_is_cut_off_and_does_not_hold_up_others() -> None:
     release = threading.Event()
+    started: list[int] = []
 
     def hung() -> None:
+        started.append(1)
         release.wait(5)
 
-    readiness = Readiness({"storage": hung, "database": ok}, 0.1)
+    readiness = Readiness({"storage": hung, "database": ok}, deadline=0.1)
     try:
-        assert readiness.run() == {"storage": "unavailable", "database": "ok"}
+        for _ in range(3):
+            assert asyncio.run(readiness.run()) == {"storage": "unavailable", "database": "ok"}
+        assert started == [1], "a check still running must not be started again"
     finally:
         release.set()
 
@@ -60,10 +72,10 @@ def test_failure_is_logged_once_until_it_changes(caplog: pytest.LogCaptureFixtur
 
     readiness = Readiness({"storage": flaky})
     with caplog.at_level(logging.INFO, logger="framegen.health"):
-        readiness.run()
-        readiness.run()
+        asyncio.run(readiness.run())
+        asyncio.run(readiness.run())
         state["up"] = True
-        readiness.run()
+        asyncio.run(readiness.run())
     messages = [record.getMessage() for record in caplog.records]
     assert messages == [
         "readiness check 'storage' failed: ConnectionError: down",

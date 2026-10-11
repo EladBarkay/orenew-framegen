@@ -1,6 +1,7 @@
 """Creates the storage bucket if it does not exist. Run once when the deployment starts."""
 
 import logging
+import time
 
 from botocore.exceptions import ClientError
 
@@ -30,8 +31,18 @@ def ensure_bucket(settings: Settings) -> bool:
     return True
 
 
-def main() -> None:
+def main(attempts: int = 6, first_wait: float = 1.0) -> None:
     logging.basicConfig(level=logging.INFO)
     settings = get_settings()
-    created = ensure_bucket(settings)
+    wait = first_wait
+    for attempt in range(1, attempts + 1):
+        try:
+            created = ensure_bucket(settings)
+            break
+        except Exception as error:
+            if attempt == attempts:
+                raise
+            log.warning("storage not ready (%s); retrying in %.0f s", error, wait)
+            time.sleep(wait)
+            wait *= 2
     log.info("bucket %s %s", settings.s3_bucket, "created" if created else "already exists")
