@@ -62,3 +62,31 @@ jobs:
         run: pnpm test
       - name: Build
         run: pnpm build
+
+  compose:
+    name: Docker Compose (all services)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build images
+        run: docker compose -f deploy/compose.yaml build
+      - name: Start everything
+        run: docker compose -f deploy/compose.yaml up --detach --wait --wait-timeout 180
+      - name: Smoke test
+        run: |
+          # Readiness, inside the deployment: the API reaches the database and storage.
+          docker compose -f deploy/compose.yaml exec -T api python -c \
+            "import urllib.request; print(urllib.request.urlopen('http://localhost:8000/internal/health/ready').read().decode())"
+          # Through the public entrance: the web app and the API.
+          curl --fail --silent --show-error --output /dev/null http://localhost:8080/
+          curl --fail --silent --show-error http://localhost:8080/v1/health
+          # Readiness must not be reachable from outside.
+          if curl --silent http://localhost:8080/internal/health/ready | grep -q '"checks"'; then
+            echo "::error::readiness is reachable through the public entrance"; exit 1
+          fi
+      - name: Logs
+        if: failure()
+        run: docker compose -f deploy/compose.yaml logs
+      - name: Stop
+        if: always()
+        run: docker compose -f deploy/compose.yaml down --volumes

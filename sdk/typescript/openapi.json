@@ -4,6 +4,7 @@
       "Health": {
         "properties": {
           "status": {
+            "const": "ok",
             "title": "Status",
             "type": "string"
           },
@@ -38,6 +39,7 @@
   "paths": {
     "/v1/health": {
       "get": {
+        "description": "Liveness: the API process is running.",
         "operationId": "getHealth",
         "responses": {
           "200": {

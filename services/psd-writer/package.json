@@ -5,6 +5,9 @@
   "license": "AGPL-3.0-only",
   "type": "module",
   "description": "Internal service that writes PSD files with editable text layers (DESIGN.md D8).",
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/main.js",
