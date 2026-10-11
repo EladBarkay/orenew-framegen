@@ -2,7 +2,7 @@
 
 > **Purpose of this file:** the design of FrameGen, written to be built from. It records
 > what the product does, how it is built, and why. Requirement IDs are stable; refer to
-> them by ID. Open questions are listed in section 13.
+> them by ID. Decisions are recorded in section 13, open questions in section 14.
 
 ---
 
@@ -395,12 +395,13 @@ Frame — Noa & Oded — portrait 1200×1800
 
 Text layers carry real text, font, size, colour and alignment, so they can be edited in
 Photoshop; each also carries a rendered preview so the file looks right in tools that
-cannot render text layers. Fonts that are not on the opening machine are noted in the
-package's readme.
+cannot render text layers. The font files used are included in the package (8.4,
+D3), so the text stays editable on any machine.
 
 ### 8.4 Package
 
-A ZIP with every output, a `frame.json` (the spec, so the design can be re-opened in
+A ZIP with every output, a `fonts/` folder with the font files the design uses, a
+`frame.json` (the spec, so the design can be re-opened in
 FrameGen or rendered by an integrator), a small preview image, and a readme listing
 fonts used. Packages are kept per project and can be downloaded again.
 
@@ -442,14 +443,14 @@ fonts used. Packages are kept per project and can be downloaded again.
 | API | Fastify + Zod schemas → OpenAPI 3.1 | The schema is the contract; docs and SDKs are generated from it. |
 | Database | PostgreSQL + pgvector, via Drizzle | One store for data, jobs and embeddings. |
 | Jobs | pg-boss | Queue in Postgres; no extra service to run. |
-| Files | S3-compatible storage (MinIO locally; R2/S3 hosted) | Pre-signed uploads/downloads. |
+| Files | S3-compatible storage (MinIO, in the same Docker Compose setup) | Pre-signed uploads/downloads. |
 | Renderer | Headless Chromium (Playwright) drawing the spec as SVG/HTML, transparent background | A complete, correct text engine (every script, right-to-left, font fallback) and exact vector drawing, for free. |
 | Pixel work | `sharp` (libvips) | Difference matting, alpha checks, trims, conversions. |
 | Local models | ONNX Runtime (matting, upscaling) | No key and no per-call cost for those steps. |
 | PSD | `ag-psd` | Reads templates; writes layered PSDs with text layers. |
 | Hebrew calendar | `@hebcal/core` | Hebrew dates and gematria numerals. |
 | Web app | SvelteKit (static build) + TypeScript | Same UI technology as Orenew. |
-| Local dev | Docker Compose (Postgres, MinIO, API, worker, web) | One command to run everything. |
+| Deployment | Docker Compose on one VPS (D2): Caddy (HTTPS), API, worker, web, Postgres, MinIO. The same file runs locally. | One command to run everything, locally and in production. |
 
 ### 9.3 Repository layout
 
@@ -519,7 +520,8 @@ renderer version that drew it.
 ### 10.3 Security of provider keys
 
 Keys are encrypted at rest with envelope encryption (a per-workspace data key, wrapped
-by a master key from a KMS or the deployment's secret store). They are decrypted only
+by a master key kept in a Docker secret on the VPS, outside the database and its
+backups). They are decrypted only
 inside workers for the duration of a call, never logged, never returned by the API,
 and can be revoked at any time. Only workspace admins can add or remove keys.
 
@@ -575,13 +577,19 @@ Each milestone is usable on its own.
 
 ---
 
-## 13. Open questions
+## 13. Decisions
+
+| # | Decision | Date |
+|---|---|---|
+| D1 | **Licence: AGPL-3.0**, intended. Anyone running a changed FrameGen as a service must publish their changes. | 2026-10-11 |
+| D2 | **Hosting: one VPS with Docker Compose.** Caddy terminates HTTPS; Postgres and MinIO run as containers with volumes on the VPS. Nightly backups of the database and storage go off the machine (`pg_dump` + MinIO bucket sync). Workers run in the same Compose setup and can be scaled with more replicas, or moved to a second machine later without changes, because they share nothing but Postgres and storage. | 2026-10-11 |
+| D3 | **Fonts are included in packages.** The package's `fonts/` folder holds every font file the design uses. Built-in fonts are open-licence, so including them is allowed. When a photographer uploads a font, they confirm they have the right to use and share it; FrameGen shows that confirmation once per font. | 2026-10-11 |
+
+## 14. Open questions
 
 | # | Question |
 |---|---|
-| Q1 | **Licence.** This repository is AGPL-3.0; Orenew is GPL-3.0-only. With AGPL, anyone running a changed FrameGen as a service must publish their changes, including a future hosted version run by others. Is that the intent? Does the "advanced version" rule from Orenew's `DECISIONS.md` (outside contributions need the `CONTRIBUTING.md` agreement) apply here too? |
-| Q2 | **Hosting.** Where will the first web version run (a VPS with Docker Compose, a managed platform)? Affects storage and the master key's home. |
+| Q1 | **Contributions.** Does Orenew's rule (outside contributions accepted only with the `CONTRIBUTING.md` agreement, so the owner can reuse all code) apply here too? |
 | Q3 | **Studios.** Do studio members need different permissions beyond admin/member (for example, members can use but not see or change provider keys)? |
 | Q4 | **Retention.** How long are uploads, drafts and packages kept? Can a workspace delete everything in one action? |
-| Q5 | **Font licensing.** Uploaded fonts are used only inside their workspace. Should FrameGen embed font files in the package for the PSD's text layers, or only list them? Many commercial font licences forbid redistribution. |
 | Q6 | **Interface languages.** Web app in English and Hebrew (right-to-left) from the start, like Orenew? |
