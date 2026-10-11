@@ -9,7 +9,8 @@ the first response back (marked ``Idempotent-Replayed: true``) without running a
   (409 ``idempotency_key_in_progress``); the client retries a little later.
 - Answers that mean "try again" are not remembered, so the client can retry them: server
   errors (5xx), 408 Request Timeout, 409 Conflict and 429 Too Many Requests.
-- Keys are remembered for 24 hours.
+- Keys are remembered for 24 hours, separately for each signed-in user: two users can use
+  the same key. A request with no signed-in user runs normally and its key is ignored.
 """
 
 import asyncio
@@ -29,6 +30,8 @@ Message = MutableMapping[str, Any]
 Receive = Callable[[], Awaitable[Message]]
 Send = Callable[[Message], Awaitable[None]]
 ASGIApp = Callable[[Scope, Receive, Send], Awaitable[None]]
+PrincipalResolver = Callable[[Scope], Awaitable[str | None]]
+"""Who a request is for (keys are kept per principal), or None when nobody is signed in."""
 
 MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 KEY_HEADER = b"idempotency-key"
@@ -173,8 +176,10 @@ class IdempotencyMiddleware:
                 400, "invalid_idempotency_key", "Idempotency-Key must be 1-255 ASCII characters."
             )
             return
-        store: IdempotencyStore | None = getattr(scope["app"].state, "idempotency_store", None)
-        if store is None:
+        state = scope["app"].state
+        store: IdempotencyStore | None = getattr(state, "idempotency_store", None)
+        resolve: PrincipalResolver | None = getattr(state, "principal_resolver", None)
+        if store is None or resolve is None:
             await answer(503, "idempotency_unavailable", "Idempotency-Key cannot be honoured now.")
             return
 
@@ -194,7 +199,11 @@ class IdempotencyMiddleware:
                 return
         body = b"".join(parts)
 
-        owner = "anonymous"  # who sent it; accounts arrive in T-06
+        owner = await resolve(scope)
+        if owner is None:
+            # Nobody to keep the key for: sign-up and sign-in are safe to repeat anyway.
+            await self.app(scope, _replaying(body, receive), send)
+            return
         method, path = scope["method"], scope["path"]
         now = datetime.now(UTC)
         result = await store.begin(
@@ -221,17 +230,6 @@ class IdempotencyMiddleware:
     async def _run_first(
         self, scope: Scope, body: bytes, receive: Receive, send: Send, claim: "_Claim"
     ) -> None:
-        delivered = False
-
-        async def replay_body() -> Message:
-            # The body was already read; hand it over once, then pass the real channel on so
-            # the app still learns when the client disconnects.
-            nonlocal delivered
-            if delivered:
-                return await receive()
-            delivered = True
-            return {"type": "http.request", "body": body, "more_body": False}
-
         status = 500
         headers: list[tuple[bytes, bytes]] = []
         chunks: list[bytes] = []
@@ -253,7 +251,7 @@ class IdempotencyMiddleware:
                     await _finish(status, headers, b"".join(chunks), send, claim)
 
         try:
-            await self.app(scope, replay_body, capture)
+            await self.app(scope, _replaying(body, receive), capture)
         except BaseException:
             # Failing after the answer was sent (a background task) leaves the key done: the
             # request's effects already happened and a retry must not repeat them.
@@ -262,6 +260,21 @@ class IdempotencyMiddleware:
             raise
         if not answered:
             await claim.release()
+
+
+def _replaying(body: bytes, receive: Receive) -> Receive:
+    """The body was already read: hand it over once, then pass the real channel on, so the
+    app still learns when the client disconnects."""
+    delivered = False
+
+    async def replay() -> Message:
+        nonlocal delivered
+        if delivered:
+            return await receive()
+        delivered = True
+        return {"type": "http.request", "body": body, "more_body": False}
+
+    return replay
 
 
 @dataclass(frozen=True)
