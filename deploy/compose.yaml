@@ -16,6 +16,8 @@ x-backend-environment: &backend-environment
   FRAMEGEN_S3_BUCKET: ${FRAMEGEN_S3_BUCKET:-framegen}
   FRAMEGEN_S3_ACCESS_KEY: ${FRAMEGEN_S3_ACCESS_KEY:-framegen}
   FRAMEGEN_S3_SECRET_KEY: ${FRAMEGEN_S3_SECRET_KEY:-framegen-dev-secret}
+  # Where browsers reach the storage: the site itself, through Caddy (web/Caddyfile).
+  FRAMEGEN_S3_PUBLIC_URL: ${FRAMEGEN_PUBLIC_URL:-http://localhost:8080}
 
 # The backend image is built once, by the api service; storage-init and worker reuse it.
 x-backend-image: &backend-image
@@ -143,6 +145,7 @@ services:
     environment:
       # Read by web/Caddyfile. In production, the domain; Caddy then gets HTTPS itself (T-56).
       FRAMEGEN_SITE_ADDRESS: ${FRAMEGEN_SITE_ADDRESS:-:80}
+      FRAMEGEN_S3_BUCKET: ${FRAMEGEN_S3_BUCKET:-framegen}
     ports:
       - 127.0.0.1:8080:80
     volumes:

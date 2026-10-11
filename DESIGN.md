@@ -252,6 +252,14 @@ Files go straight to object storage through pre-signed URLs; the API never strea
 large files. Accepted: PNG, JPEG, WebP, HEIC (phone photos), TIFF, PSD, PDF (first
 page), SVG (stamps), and font files (TTF, OTF, WOFF2).
 
+The client declares each file's type, size and SHA-256 first. The upload link is signed
+with that checksum, so the storage refuses any other content. On completion FrameGen
+reads only the file's first bytes: it checks that they really are the declared type, and
+deletes the file otherwise, so nothing can be stored as an image and served back as a
+page. It also reads the pixel size. Download links always download, never display, and
+expire after 15 minutes. Browsers reach the storage through the site itself (Caddy
+forwards the bucket's path), so no second domain or certificate is needed.
+
 ### 6.3 Templates (importing existing frames)
 
 | Source | Import |
@@ -512,9 +520,14 @@ renderer version that drew it.
 
 ### 10.2 Resources
 
+A workspace's resources live under its path: `/v1/brand-kit` below stands for
+`/v1/workspaces/{workspace_id}/brand-kit`, and so on. Roles are checked once, at that
+prefix (D5). Accounts (`/v1/auth/…`, `/v1/me`), the workspace list and invitations sit
+outside it.
+
 | Endpoint | Purpose |
 |---|---|
-| `POST /v1/assets` → pre-signed upload; `POST /v1/assets/{id}/complete` | Upload any file. |
+| `POST /v1/assets` → pre-signed upload; `POST /v1/assets/{id}/complete`; `GET /v1/assets[/{id}]` | Upload any file (6.2); list and download. |
 | `GET/PUT /v1/brand-kit` | Stamps, fonts, colours. |
 | `GET/POST/DELETE /v1/provider-credentials` | Connect provider keys; `POST …/{id}/test` checks one. Keys are never returned. |
 | `GET/POST /v1/output-presets` | Output presets. |

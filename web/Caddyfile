@@ -1,21 +1,31 @@
-# Serves the web app and forwards the API. FRAMEGEN_SITE_ADDRESS is ":80" by default;
-# in production it is the domain, and Caddy then gets HTTPS certificates itself (T-56).
+# Serves the web app and forwards the API and file storage. FRAMEGEN_SITE_ADDRESS is ":80"
+# by default; in production it is the domain, and Caddy then gets HTTPS certificates
+# itself (T-56).
 {$FRAMEGEN_SITE_ADDRESS::80} {
-	encode zstd gzip
+	# Pre-signed upload and download links point here (FRAMEGEN_S3_PUBLIC_URL is the site),
+	# so browsers reach the storage without a second domain. The path and Host header pass
+	# through unchanged, as the links' signatures cover them; bodies are not compressed.
+	@storage path /{$FRAMEGEN_S3_BUCKET:framegen}/*
+	handle @storage {
+		reverse_proxy {$FRAMEGEN_STORAGE_UPSTREAM:storage:9000}
+	}
 
 	@api path /v1 /v1/*
 	handle @api {
+		encode zstd gzip
 		reverse_proxy {$FRAMEGEN_API_UPSTREAM:api:8000}
 	}
 
 	# Built assets: a missing one is a real 404, never the app's index.html.
 	handle /_app/* {
+		encode zstd gzip
 		root * /srv
 		file_server
 	}
 
 	# Everything else is a page of the single-page app.
 	handle {
+		encode zstd gzip
 		root * /srv
 		try_files {path} /index.html
 		file_server

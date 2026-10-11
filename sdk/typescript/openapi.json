@@ -1,6 +1,194 @@
 {
   "components": {
     "schemas": {
+      "Asset": {
+        "properties": {
+          "content_type": {
+            "enum": [
+              "image/png",
+              "image/jpeg",
+              "image/webp",
+              "image/heic",
+              "image/tiff",
+              "image/vnd.adobe.photoshop",
+              "application/pdf",
+              "image/svg+xml",
+              "font/ttf",
+              "font/otf",
+              "font/woff2"
+            ],
+            "title": "Content Type",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "download_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A link that downloads the file, valid for 15 minutes (ready assets).",
+            "title": "Download Url"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "height": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "reference",
+              "font",
+              "stamp",
+              "template-source",
+              "piece",
+              "render",
+              "package"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "ready"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "width": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Pixel width, when the file has one.",
+            "title": "Width"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "status",
+          "filename",
+          "content_type",
+          "size",
+          "sha256",
+          "width",
+          "height",
+          "created_at",
+          "download_url"
+        ],
+        "title": "Asset",
+        "type": "object"
+      },
+      "AssetCreate": {
+        "properties": {
+          "content_type": {
+            "enum": [
+              "image/png",
+              "image/jpeg",
+              "image/webp",
+              "image/heic",
+              "image/tiff",
+              "image/vnd.adobe.photoshop",
+              "application/pdf",
+              "image/svg+xml",
+              "font/ttf",
+              "font/otf",
+              "font/woff2"
+            ],
+            "title": "Content Type",
+            "type": "string"
+          },
+          "filename": {
+            "description": "The file's name.",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Filename",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "reference",
+              "font",
+              "stamp",
+              "template-source"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "sha256": {
+            "description": "The content's SHA-256, hex.",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Sha256",
+            "type": "string"
+          },
+          "size": {
+            "description": "In bytes.",
+            "exclusiveMinimum": 0.0,
+            "title": "Size",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "kind",
+          "filename",
+          "content_type",
+          "size",
+          "sha256"
+        ],
+        "title": "AssetCreate",
+        "type": "object"
+      },
+      "CreatedAsset": {
+        "properties": {
+          "asset": {
+            "$ref": "#/components/schemas/Asset"
+          },
+          "upload": {
+            "$ref": "#/components/schemas/Upload"
+          }
+        },
+        "required": [
+          "asset",
+          "upload"
+        ],
+        "title": "CreatedAsset",
+        "type": "object"
+      },
       "CreatedInvitation": {
         "properties": {
           "created_at": {
@@ -232,6 +420,34 @@
         "title": "MemberUpdate",
         "type": "object"
       },
+      "Page_Asset_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Asset"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "title": "Page[Asset]",
+        "type": "object"
+      },
       "Page_Invitation_": {
         "properties": {
           "items": {
@@ -362,6 +578,40 @@
           "name"
         ],
         "title": "SignUp",
+        "type": "object"
+      },
+      "Upload": {
+        "properties": {
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Send exactly these headers with the upload.",
+            "title": "Headers",
+            "type": "object"
+          },
+          "method": {
+            "const": "PUT",
+            "title": "Method",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "method",
+          "headers",
+          "expires_at"
+        ],
+        "title": "Upload",
         "type": "object"
       },
       "User": {
@@ -933,6 +1183,301 @@
         "summary": "Update Workspace",
         "tags": [
           "workspaces"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/assets": {
+      "get": {
+        "description": "Ready assets of the workspace, oldest first.",
+        "operationId": "listAssets",
+        "parameters": [
+          {
+            "description": "The workspace's ID.",
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "description": "The workspace's ID.",
+              "maxLength": 40,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only assets of this kind.",
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "reference",
+                    "font",
+                    "stamp",
+                    "template-source",
+                    "piece",
+                    "render",
+                    "package"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only assets of this kind.",
+              "title": "Kind"
+            }
+          },
+          {
+            "description": "Items per page.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "description": "Items per page.",
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The next_cursor of the previous page.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 1024,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The next_cursor of the previous page.",
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_Asset_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "List Assets",
+        "tags": [
+          "assets"
+        ]
+      },
+      "post": {
+        "description": "Start an upload: returns the asset (pending) and where to upload the file.",
+        "operationId": "createAsset",
+        "parameters": [
+          {
+            "description": "The workspace's ID.",
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "description": "The workspace's ID.",
+              "maxLength": 40,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatedAsset"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Create Asset",
+        "tags": [
+          "assets"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/assets/{asset_id}": {
+      "get": {
+        "operationId": "getAsset",
+        "parameters": [
+          {
+            "description": "The asset's ID.",
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "description": "The asset's ID.",
+              "maxLength": 40,
+              "title": "Asset Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The workspace's ID.",
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "description": "The workspace's ID.",
+              "maxLength": 40,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Asset"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Get Asset",
+        "tags": [
+          "assets"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/assets/{asset_id}/complete": {
+      "post": {
+        "description": "Confirm an upload. Safe to repeat: a ready asset is simply returned.",
+        "operationId": "completeAsset",
+        "parameters": [
+          {
+            "description": "The asset's ID.",
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "description": "The asset's ID.",
+              "maxLength": 40,
+              "title": "Asset Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The workspace's ID.",
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "description": "The workspace's ID.",
+              "maxLength": 40,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Asset"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Complete Asset",
+        "tags": [
+          "assets"
         ]
       }
     },
