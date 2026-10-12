@@ -10,6 +10,7 @@
     createStudio,
     forget,
     preferredFor,
+    same,
     select,
     workspace,
     type Workspace,
@@ -31,8 +32,9 @@
 
   $effect.pre(() => {
     const chosen = choose(workspaces, preferredFor(data.user.id));
-    // Also when only the details changed (a new role or name): keep the fresh object.
-    if (chosen && chosen !== workspace.current) select(chosen, data.user.id);
+    // Also when only the details changed (a new role or name). Compared by value: state
+    // holds its own proxy of the object, never the object itself.
+    if (chosen && !same(chosen, workspace.current)) select(chosen, data.user.id);
   });
 
   function label(w: Workspace): string {

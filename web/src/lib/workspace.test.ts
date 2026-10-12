@@ -12,7 +12,7 @@ vi.mock("@sveltejs/kit", () => ({
   },
 }));
 
-const { choose, forget, listWorkspaces, preferredFor, select } =
+const { choose, forget, listWorkspaces, preferredFor, same, select } =
   await import("./workspace.svelte.ts");
 
 const personal = { id: "wsp_p", name: "Personal", kind: "personal", role: "owner" } as const;
@@ -67,5 +67,13 @@ describe("preferredFor", () => {
   it("ignores another user's choice", () => {
     select(studio, "usr_a");
     expect(preferredFor("usr_b")[0]).toBeNull();
+  });
+});
+
+describe("same", () => {
+  it("compares by value, so a proxy of the same workspace is the same", () => {
+    expect(same(studio, { ...studio })).toBe(true);
+    expect(same(studio, { ...studio, role: "member" })).toBe(false);
+    expect(same(studio, null)).toBe(false);
   });
 });

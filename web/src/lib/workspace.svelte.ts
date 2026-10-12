@@ -71,6 +71,11 @@ export function forget(): void {
   workspace.userId = null;
 }
 
+/** Whether two workspaces are the same and show the same details. */
+export function same(a: Workspace, b: Workspace | null): boolean {
+  return b !== null && a.id === b.id && a.name === b.name && a.kind === b.kind && a.role === b.role;
+}
+
 /** What to prefer for `userId`: their choice in this tab, then the one remembered. */
 export function preferredFor(userId: string): (string | null)[] {
   const inMemory = workspace.userId === userId ? (workspace.current?.id ?? null) : null;
