@@ -86,6 +86,27 @@ def test_a_hung_check_is_cut_off_and_does_not_hold_up_others() -> None:
         release.set()
 
 
+def test_requests_waiting_on_a_hung_check_do_not_pile_up() -> None:
+    release = threading.Event()
+
+    def hung() -> None:
+        release.wait(5)
+
+    readiness = Readiness({"storage": hung}, deadline=0.02)
+
+    async def ask_repeatedly() -> int:
+        for _ in range(20):
+            await readiness.run()
+        run = readiness._probes["storage"]._current
+        assert run is not None and not run.done()
+        return len(run._done_callbacks)  # type: ignore[attr-defined]
+
+    try:
+        assert asyncio.run(ask_repeatedly()) == 1
+    finally:
+        release.set()
+
+
 def test_failure_is_logged_once_until_it_changes(caplog: pytest.LogCaptureFixture) -> None:
     state = {"up": False}
 
