@@ -18,8 +18,8 @@ job=$(api POST "/v1/workspaces/$workspace/jobs/demo" '{"steps":3}' | jq -r '.id'
 
 # Follow it as it happens: the stream must reach the end of the job through Caddy.
 last=$(curl --fail --silent --show-error --no-buffer --max-time 60 -b "$cookies" \
-  "$site/v1/workspaces/$workspace/jobs/$job/events" | grep '^data: ' | tail -n 1)
-[[ $(jq -r '.status' <<<"${last#data: }") == succeeded ]] \
+  "$site/v1/workspaces/$workspace/jobs/$job/events" | grep '^data: ' | tail -n 1) || true
+[[ -n $last && $(jq -r '.status' <<<"${last#data: }") == succeeded ]] \
   || { echo "event stream did not end with success: $last"; exit 1; }
 
 for _ in $(seq 60); do

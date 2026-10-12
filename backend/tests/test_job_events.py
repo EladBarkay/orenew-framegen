@@ -114,3 +114,31 @@ def test_another_workspace_cannot_follow_a_job(client: TestClient) -> None:
     mine = sign_up(client)
     response = client.get(f"/v1/workspaces/{mine}/jobs/{job['id']}/events")
     assert response.status_code == 404
+
+
+def test_a_reconnect_to_an_ended_job_is_told_to_stop(
+    client: TestClient, settings: Settings
+) -> None:
+    workspace_id = sign_up(client)
+    job = client.post(f"/v1/workspaces/{workspace_id}/jobs/demo", json={"steps": 1}).json()
+    asyncio.run(run_worker(settings, wait=False))
+    path = f"/v1/workspaces/{workspace_id}/jobs/{job['id']}/events"
+    response = client.get(path, headers={"Last-Event-ID": "3"})
+    assert response.status_code == 204
+
+
+def test_events_are_numbered(client: TestClient, server: str, settings: Settings) -> None:
+    workspace_id = sign_up(client)
+    job = client.post(f"/v1/workspaces/{workspace_id}/jobs/demo", json={"steps": 2}).json()
+    cookie = f"{SESSION_COOKIE}={client.cookies.get(SESSION_COOKIE)}"
+    request = urllib.request.Request(
+        f"{server}/v1/workspaces/{workspace_id}/jobs/{job['id']}/events",
+        headers={"Cookie": cookie},
+    )
+    worker = threading.Thread(target=lambda: asyncio.run(run_worker(settings, wait=False)))
+    with urllib.request.urlopen(request, timeout=30) as response:
+        worker.start()
+        ids = [raw.decode().strip() for raw in response if raw.startswith(b"id: ")]
+    worker.join()
+    assert ids == [f"id: {n}" for n in range(1, len(ids) + 1)]
+    assert len(ids) >= 2

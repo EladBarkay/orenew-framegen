@@ -10,6 +10,7 @@ import asyncio
 import contextlib
 import logging
 from collections import defaultdict
+from collections.abc import AsyncIterator
 
 import psycopg
 
@@ -23,6 +24,8 @@ class JobEvents:
         self._conninfo = conninfo
         self._waiting: defaultdict[str, set[asyncio.Event]] = defaultdict(set)
         self._task: asyncio.Task[None] | None = None
+        self.listening = False
+        """True while notifications arrive; streams then re-read their job less often."""
 
     def start(self) -> None:
         """Starts listening in the background; never waits for the database."""
@@ -34,14 +37,14 @@ class JobEvents:
             with contextlib.suppress(asyncio.CancelledError):
                 await self._task
 
-    async def wait(self, job_id: str, timeout: float) -> None:
-        """Returns when the job changes, or after ``timeout`` seconds at most."""
+    @contextlib.asynccontextmanager
+    async def follow(self, job_id: str) -> AsyncIterator["Changes"]:
+        """Registers for the job's changes first, so none is missed between reading the
+        job and waiting for the next change."""
         event = asyncio.Event()
         self._waiting[job_id].add(event)
         try:
-            await asyncio.wait_for(event.wait(), timeout)
-        except TimeoutError:
-            pass
+            yield Changes(event)
         finally:
             self._waiting[job_id].discard(event)
             if not self._waiting[job_id]:
@@ -56,15 +59,37 @@ class JobEvents:
         while True:
             try:
                 async with await psycopg.AsyncConnection.connect(
-                    self._conninfo, autocommit=True
+                    self._conninfo,
+                    autocommit=True,
+                    connect_timeout=5,
+                    # Notice a connection that died silently (failover, NAT timeout) within
+                    # about a minute, instead of waiting on it for ever.
+                    keepalives=1,
+                    keepalives_idle=30,
+                    keepalives_interval=10,
+                    keepalives_count=3,
                 ) as conn:
                     await conn.execute(f"LISTEN {JOB_EVENTS}")
                     pause = 1.0
+                    self.listening = True
                     async for note in conn.notifies():
                         self._wake(note.payload)
             except asyncio.CancelledError:
                 raise
             except Exception as error:
                 log.warning("job events: %s; listening again in %.0f s", error, pause)
+            finally:
+                self.listening = False
             await asyncio.sleep(pause)
             pause = min(pause * 2, 30.0)
+
+
+class Changes:
+    def __init__(self, event: asyncio.Event) -> None:
+        self._event = event
+
+    async def wait(self, timeout: float) -> None:
+        """Returns when the job has changed since the last call, or after ``timeout``."""
+        with contextlib.suppress(TimeoutError):
+            await asyncio.wait_for(self._event.wait(), timeout)
+        self._event.clear()

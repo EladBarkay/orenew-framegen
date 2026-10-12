@@ -1400,7 +1400,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Server-sent events. Each `job` event carries the job (as getJob returns it): first its current state, then each change. The stream ends after the job has succeeded or failed. Lines starting with ':' only keep the connection alive. */
+            /** @description Server-sent events. Each `job` event carries the job (as getJob returns it): first its current state, then each change. The stream ends after the job has succeeded or failed (clients should then stop following), or after 10 minutes (reconnect to go on). Lines starting with ':' only keep the connection alive. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1408,6 +1408,13 @@ export interface operations {
                 content: {
                     "text/event-stream": string;
                 };
+            };
+            /** @description A reconnect (with Last-Event-ID) to a job that has ended: nothing more will come, and browsers' EventSource stops reconnecting. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {

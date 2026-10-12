@@ -6,6 +6,7 @@ header. The client then follows the job with ``getJob`` until its status is
 reads ``getJobEvents``, a stream of server-sent events that ends with the job.
 """
 
+import logging
 import time
 from collections.abc import AsyncIterator
 from datetime import datetime
@@ -22,7 +23,10 @@ from framegen.api.access import MemberAccess
 from framegen.api.auth import Engine
 from framegen.api.errors import ApiError
 from framegen.db.tables import jobs
+from framegen.jobs.listener import JobEvents
 from framegen.jobs.queue import QueueUnavailable, start_job
+
+log = logging.getLogger("framegen.api")
 
 router = APIRouter(tags=["jobs"])
 
@@ -120,9 +124,13 @@ async def get_job(job_id: JobId, access: MemberAccess, engine: Engine) -> Job:
 
 FINISHED = {"succeeded", "failed"}
 RECHECK_SECONDS = 2.0
-"""A stream re-reads its job at least this often, in case a notification was missed."""
+"""How often a stream re-reads its job while notifications are not arriving."""
+RECHECK_LISTENING_SECONDS = 30.0
+"""The same while they arrive: only in case one was missed."""
 KEEP_ALIVE_SECONDS = 15.0
 """A comment line this often keeps proxies from closing a quiet stream."""
+MAX_STREAM_SECONDS = 600.0
+"""A stream ends after this; clients reconnect and get the current state at once."""
 
 
 @router.get(
@@ -134,35 +142,54 @@ KEEP_ALIVE_SECONDS = 15.0
             "description": (
                 "Server-sent events. Each `job` event carries the job (as getJob returns "
                 "it): first its current state, then each change. The stream ends after the "
-                "job has succeeded or failed. Lines starting with ':' only keep the "
+                "job has succeeded or failed (clients should then stop following), or after "
+                "10 minutes (reconnect to go on). Lines starting with ':' only keep the "
                 "connection alive."
             ),
             "content": {"text/event-stream": {"schema": {"type": "string"}}},
-        }
+        },
+        204: {
+            "description": (
+                "A reconnect (with Last-Event-ID) to a job that has ended: nothing more will "
+                "come, and browsers' EventSource stops reconnecting."
+            )
+        },
     },
 )
 async def get_job_events(
     job_id: JobId, access: MemberAccess, engine: Engine, request: Request
-) -> StreamingResponse:
+) -> Response:
     """Follow a job as it happens."""
     first = await find_job(engine, access.workspace_id, job_id)
-    events = request.app.state.job_events
+    if first.status in FINISHED and "last-event-id" in request.headers:
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+    events: JobEvents = request.app.state.job_events
 
     async def stream() -> AsyncIterator[str]:
-        job, sent = first, ""
-        quiet_since = time.monotonic()
-        while True:
-            data = job.model_dump_json()
-            if data != sent:
-                yield f"event: job\ndata: {data}\n\n"
-                sent, quiet_since = data, time.monotonic()
-            elif time.monotonic() - quiet_since >= KEEP_ALIVE_SECONDS:
-                yield ": keep-alive\n\n"
-                quiet_since = time.monotonic()
-            if job.status in FINISHED:
-                return
-            await events.wait(job_id, RECHECK_SECONDS)
-            job = await find_job(engine, access.workspace_id, job_id)
+        started = quiet_since = time.monotonic()
+        job, sent, number = first, "", 0
+        async with events.follow(job_id) as changes:
+            while True:
+                data = job.model_dump_json()
+                if data != sent:
+                    number += 1
+                    yield f"id: {number}\nevent: job\ndata: {data}\n\n"
+                    sent, quiet_since = data, time.monotonic()
+                elif time.monotonic() - quiet_since >= KEEP_ALIVE_SECONDS:
+                    yield ": keep-alive\n\n"
+                    quiet_since = time.monotonic()
+                if job.status in FINISHED or time.monotonic() - started >= MAX_STREAM_SECONDS:
+                    return
+                await changes.wait(
+                    RECHECK_LISTENING_SECONDS if events.listening else RECHECK_SECONDS
+                )
+                try:
+                    job = await find_job(engine, access.workspace_id, job_id)
+                except Exception:
+                    # Gone (its workspace was deleted) or the database is unreachable: end
+                    # the stream cleanly; a client that reconnects learns which.
+                    log.warning("job %s: stream ended early", job_id, exc_info=True)
+                    return
 
     return StreamingResponse(
         stream(),
