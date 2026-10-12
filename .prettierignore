@@ -5,4 +5,5 @@ backend/
 web/.svelte-kit/
 sdk/typescript/openapi.json
 sdk/typescript/src/schema.ts
+schemas/frame-spec.schema.json
 *.md

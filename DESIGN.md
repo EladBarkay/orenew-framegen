@@ -130,8 +130,8 @@ The frame spec is JSON, validated by a published schema (`backend/framegen/spec`
   "specVersion": 1,
   "aspect": { "portrait": "2:3", "landscape": "3:2" },   // from the output preset
   "window": { "shape": "rounded", "radius": 0.02,
-              "portrait":  { "inset": { "top": 0.06, "inline": 0.06, "bottom": 0.22 } },
-              "landscape": { "inset": { "top": 0.06, "inline": 0.05, "bottom": 0.20 } } },
+              "portrait":  { "inset": { "top": 0.06, "start": 0.06, "end": 0.06, "bottom": 0.22 } },
+              "landscape": { "inset": { "top": 0.06, "start": 0.05, "end": 0.05, "bottom": 0.20 } } },
   "decoration": {
     "archetype": "corners",                              // stroke | bar | corners | surround | scatter | template
     "layers": [
