@@ -1,0 +1,9 @@
+{
+  "app.name": "FrameGen",
+  "health.checking": "Checking the API…",
+  "health.up": "API is up (version {version}).",
+  "health.down": "The API cannot be reached.",
+  "footer.licence": "FrameGen is free software under the {licence}.",
+  "footer.licence_name": "GNU AGPL, version 3",
+  "footer.source": "Source code"
+}
