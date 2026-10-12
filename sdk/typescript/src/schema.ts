@@ -277,6 +277,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/workspaces/{workspace_id}/jobs/demo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Demo Job
+         * @description Start a job that only counts through its steps, for checking that jobs work in a
+         *     deployment and for trying out a client. It uses no AI and costs nothing.
+         */
+        post: operations["startDemoJob"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/jobs/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Job
+         * @description A job's status, progress, and its result or error once it has ended.
+         */
+        get: operations["getJob"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/workspaces/{workspace_id}/members": {
         parameters: {
             query?: never;
@@ -425,6 +466,19 @@ export interface components {
              */
             token: string;
         };
+        /** DemoJob */
+        DemoJob: {
+            /**
+             * Fail With
+             * @description Fail halfway with this error code, to try out error handling.
+             */
+            fail_with?: string | null;
+            /**
+             * Steps
+             * @default 5
+             */
+            steps: number;
+        };
         /** ErrorBody */
         ErrorBody: {
             /** Code */
@@ -487,6 +541,56 @@ export interface components {
              * @enum {string}
              */
             role: "member" | "admin" | "owner";
+        };
+        /** Job */
+        Job: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** @description Set when the job failed. */
+            error: components["schemas"]["JobError"] | null;
+            /** Finished At */
+            finished_at: string | null;
+            /** Id */
+            id: string;
+            /** Progress */
+            progress: number;
+            /**
+             * Result
+             * @description Set when the job succeeded.
+             */
+            result: {
+                [key: string]: unknown;
+            } | null;
+            /** Started At */
+            started_at: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "queued" | "running" | "succeeded" | "failed";
+            /**
+             * Step
+             * @description What the job is doing now, in English.
+             */
+            step: string | null;
+            /** Type */
+            type: string;
+        };
+        /** JobError */
+        JobError: {
+            /**
+             * Code
+             * @description Stable, for programs; as in API errors.
+             */
+            code: string;
+            /**
+             * Message
+             * @description An English hint for developers.
+             */
+            message: string;
         };
         /** Member */
         Member: {
@@ -1179,6 +1283,76 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    startDemoJob: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The workspace's ID. */
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DemoJob"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Job"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getJob: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The job's ID. */
+                job_id: string;
+                /** @description The workspace's ID. */
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Job"];
+                };
             };
             /** @description Error */
             default: {
