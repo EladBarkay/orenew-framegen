@@ -1,8 +1,13 @@
 <script lang="ts">
   import { page } from "$app/state";
 
-  import { t } from "#lib/i18n.svelte.ts";
+  import { t, type MessageKey } from "#lib/i18n.svelte.ts";
+
+  // Replaces SvelteKit's own error page, which is in English only.
+  const MESSAGES: Record<number, MessageKey> = {
+    404: "error.not_found",
+    502: "error.network",
+  };
 </script>
 
-<!-- Replaces SvelteKit's own error page, which is in English only. -->
-<p role="alert">{t(page.status === 404 ? "error.not_found" : "error.network")}</p>
+<p role="alert">{t(MESSAGES[page.status] ?? "error.unavailable")}</p>

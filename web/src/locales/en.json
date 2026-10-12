@@ -20,5 +20,6 @@
   "error.unauthenticated": "Please sign in again.",
   "error.network": "FrameGen cannot be reached. Check your connection and try again.",
   "error.unknown": "Something went wrong. Please try again.",
-  "error.not_found": "This page does not exist."
+  "error.not_found": "This page does not exist.",
+  "error.unavailable": "FrameGen is not working right now. Please try again in a few minutes."
 }
