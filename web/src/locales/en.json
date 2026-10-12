@@ -21,5 +21,13 @@
   "error.network": "FrameGen cannot be reached. Check your connection and try again.",
   "error.unknown": "Something went wrong. Please try again.",
   "error.not_found": "This page does not exist.",
-  "error.unavailable": "FrameGen is not working right now. Please try again in a few minutes."
+  "error.unavailable": "FrameGen is not working right now. Please try again in a few minutes.",
+  "workspace.choose": "Workspace",
+  "workspace.personal": "Personal",
+  "workspace.option": "{name} ({role})",
+  "workspace.new_studio": "New studio name",
+  "workspace.create": "Create studio",
+  "role.owner": "owner",
+  "role.admin": "admin",
+  "role.member": "member"
 }
