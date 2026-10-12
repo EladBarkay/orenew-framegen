@@ -159,6 +159,20 @@ BASE = ATTACHMENTS["23.9.26 wedding, bar with icons"]
         ({"stamp": {**BRAND_KIT_STAMP, "size": 0.6}}, "less_than_equal"),
         ({"stamp": {**BRAND_KIT_STAMP, "slot": "bottom-band"}}, "spec_slot_taken"),
         ({"headline": None}, "spec_slot_under_headline"),
+        ({"headline": headline("a\u202eb")}, "spec_text_control"),
+        ({"headline": headline("a\x85b")}, "spec_text_control"),
+        ({"headline": headline("a\u2028b")}, "spec_text_control"),
+        ({"date": date(joiner="\x00")}, "spec_text_control"),
+        ({"date": date(formats=[{"calendar": "gregorian", "pattern": " - "}])},
+         "spec_date_pattern_empty"),
+        ({"date": date(formats=[{"calendar": "gregorian", "pattern": "ddd.MM"}])},
+         "spec_date_pattern_field"),
+        ({"date": date(formats=[{"calendar": "gregorian", "pattern": "yyyyyy"}])},
+         "spec_date_pattern_field"),
+        ({"stamp": {"source": "text", "text": "x", "font": "heebo", "color": "#000000",
+                    "slot": "end-edge"}}, "missing"),
+        ({"stamp": {"source": "text", "text": "x", "font": "heebo", "color": "#000000",
+                    "size": 0.4, "slot": "end-edge"}}, "less_than_equal"),
         ({"headline": headline(slot="under-headline")}, "spec_slot_under_headline"),
     ],
 )  # fmt: skip
@@ -194,3 +208,33 @@ def test_each_archetype_needs_its_layers(decoration: dict[str, Any], ok: bool) -
         assert read_spec(frame(decoration))
     else:
         assert codes(frame(decoration)) == {"spec_archetype_incomplete"}
+
+
+def test_hebrew_direction_marks_are_allowed() -> None:
+    assert read_spec({**BASE, "headline": headline("עפרי\u200f & Jonas")})
+
+
+def test_a_spec_validates_again_from_python() -> None:
+    spec = read_spec(BASE)
+    again = type(spec).model_validate(spec.model_dump(by_alias=True), by_alias=True)
+    assert again == spec
+
+
+@pytest.mark.parametrize(
+    ("changes", "location"),
+    [
+        ({"stamp": {"source": "text", "text": "x", "font": "BAD", "color": "#000000",
+                    "size": 0.02, "slot": "end-edge"}}, ("stamp", "font")),
+        ({"date": date(formats=[{"calendar": "gregorian", "pattern": "hh"}])},
+         ("date", "formats", 0, "pattern")),
+        ({"headline": headline(slot="middle")}, ("headline", "slot")),
+        ({"headline": headline(slot={"portrait": "middle", "landscape": "top-band"})},
+         ("headline", "slot", "portrait")),
+    ],
+)  # fmt: skip
+def test_locations_in_components_are_json_paths(
+    changes: dict[str, Any], location: tuple[str | int, ...]
+) -> None:
+    with pytest.raises(SpecInvalid) as caught:
+        read_spec({**BASE, **changes})
+    assert [problem.location for problem in caught.value.problems] == [location]

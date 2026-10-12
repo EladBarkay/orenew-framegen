@@ -8,7 +8,7 @@ import datetime
 import re
 from typing import Annotated, Literal, Self
 
-from pydantic import BeforeValidator, Field, model_validator
+from pydantic import BeforeValidator, Discriminator, Field, Tag, model_validator
 from pydantic_core import PydanticCustomError
 
 from framegen.spec.models import Color, Fraction, SpecModel
@@ -36,7 +36,14 @@ class SlotPerOrientation(SpecModel):
     landscape: Slot
 
 
-Placement = Slot | SlotPerOrientation
+def _placement_kind(value: object) -> str:
+    return "name" if isinstance(value, str) else "each"
+
+
+Placement = Annotated[
+    Annotated[Slot, Tag("name")] | Annotated[SlotPerOrientation, Tag("each")],
+    Discriminator(_placement_kind),
+]
 """A slot name for the same slot in both orientations, or one slot for each."""
 
 
@@ -56,20 +63,29 @@ FontRef = Annotated[
     ),
 ]
 
-_CONTROL = re.compile(r"[\x00-\x09\x0b-\x1f\x7f]")
+_CONTROL = re.compile(
+    "[\x00-\x09\x0b-\x1f\x7f-\x9f"  # control characters, but not the line break
+    "\u202a-\u202e\u2066-\u2069"  # direction overrides and isolates: they reorder text
+    "\u2028\u2029]"  # other line and paragraph separators
+)
+"""Not allowed in text. The direction marks Hebrew needs (U+200E, U+200F) are allowed."""
 
 
-def _text(value: object) -> object:
-    # Line breaks are allowed; other control characters are not.
-    if isinstance(value, str):
-        if _CONTROL.search(value):
-            raise PydanticCustomError("spec_text_control", "The text has control characters.")
-        if not value.strip():
-            raise PydanticCustomError("spec_text_empty", "The text is empty.")
+def _no_control(value: object) -> object:
+    if isinstance(value, str) and _CONTROL.search(value):
+        raise PydanticCustomError("spec_text_control", "The text has control characters.")
     return value
 
 
-Text = Annotated[str, BeforeValidator(_text), Field(max_length=200)]
+def _not_blank(value: object) -> object:
+    if isinstance(value, str) and not value.strip():
+        raise PydanticCustomError("spec_text_empty", "The text is empty.")
+    return value
+
+
+Text = Annotated[
+    str, BeforeValidator(_not_blank), BeforeValidator(_no_control), Field(max_length=200)
+]
 
 
 class TextStyle(SpecModel):
@@ -92,13 +108,16 @@ class Headline(TextStyle):
     slot: Placement
 
 
+DATE_FIELDS = {"d", "dd", "M", "MM", "MMM", "MMMM", "yy", "yyyy"}
+
+
 class GregorianFormat(SpecModel):
     calendar: Literal["gregorian"]
     pattern: str | None = Field(
         default=None,
-        pattern=r"^(d{1,2}|M{1,4}|yy|yyyy|[ .,/\-])+$",
+        pattern=r"^[dMy .,/\-]+$",
         max_length=40,
-        description="Unicode date pattern made of d, M, yy or yyyy and separators.",
+        description="Unicode date pattern: d or dd, M to MMMM, yy or yyyy, and separators.",
         examples=["dd.MM.yyyy", "d.M.yy", "d MMMM yyyy"],
     )
     style: Literal["short", "medium", "long", "full"] | None = None
@@ -110,6 +129,16 @@ class GregorianFormat(SpecModel):
             raise PydanticCustomError(
                 "spec_date_pattern_or_style", "Give a pattern or a style, not both."
             )
+        if self.pattern is not None:
+            runs = re.findall("d+|M+|y+", self.pattern)
+            if not runs:
+                raise PydanticCustomError("spec_date_pattern_empty", "The pattern shows no date.")
+            # Each run of a letter is one whole field, so "ddd" is not read as "dd" + "d".
+            if any(run not in DATE_FIELDS for run in runs):
+                raise PydanticCustomError(
+                    "spec_date_pattern_field",
+                    "Use d or dd, M to MMMM, and yy or yyyy.",
+                )
         return self
 
 
@@ -124,6 +153,8 @@ DateFormat = Annotated[GregorianFormat | HebrewFormat, Field(discriminator="cale
 
 def _iso_date(value: object) -> object:
     # JSON has no date type: exactly YYYY-MM-DD, nothing looser (no times, no numbers).
+    if type(value) is datetime.date:  # already read, as when a spec is validated again
+        return value
     if not (isinstance(value, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", value)):
         raise PydanticCustomError("date_type", "Input should be a date as YYYY-MM-DD")
     try:
@@ -143,7 +174,7 @@ class Date(TextStyle):
         description="The event is in the evening, so its Hebrew date is the next day's.",
     )
     formats: list[DateFormat] = Field(min_length=1, max_length=3)
-    joiner: str | None = Field(
+    joiner: Annotated[str, BeforeValidator(_no_control)] | None = Field(
         default=" · ",
         max_length=10,
         description="Between formats on one line; null stacks them on separate lines.",
@@ -154,8 +185,12 @@ class Date(TextStyle):
     slot: Placement
 
 
-class StampPlacement(SpecModel):
+class StampBase(SpecModel):
     slot: Placement
+    opacity: Fraction = 1
+
+
+class MarkSize(SpecModel):
     size: Annotated[
         float,
         Field(
@@ -165,21 +200,22 @@ class StampPlacement(SpecModel):
             description="Longest side, as a share of the frame's shorter side.",
         ),
     ] = 0.08
-    opacity: Fraction = 1
 
 
-class BrandKitStamp(StampPlacement):
+class BrandKitStamp(StampBase, MarkSize):
     """The workspace's stamp from its brand kit."""
 
     source: Literal["brand-kit"]
 
 
-class TextStamp(StampPlacement, TextStyle):
+class TextStamp(StampBase, TextStyle):
+    """A text stamp given here; its size is a text height, as for the headline."""
+
     source: Literal["text"]
     text: Text
 
 
-class ImageStamp(StampPlacement):
+class ImageStamp(StampBase, MarkSize):
     source: Literal["image"]
     image: str = Field(pattern=r"^ast_[a-z2-7]{26}$")
 

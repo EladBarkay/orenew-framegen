@@ -22,7 +22,8 @@ def render() -> str:
         "portrait is not wider than tall; a radius only for 'rounded' and a mask only for "
         "'mask'; each decoration archetype has its layers; and the headline, date and "
         "stamp each have their own slot in each orientation ('under-headline' needs a "
-        "headline)."
+        "headline); a Gregorian date pattern shows at least one date field, each run of "
+        "a letter being a whole field (d, dd, M to MMMM, yy, yyyy)."
     )
     return json.dumps(schema, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
 

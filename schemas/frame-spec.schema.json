@@ -210,7 +210,7 @@
           "type": "number"
         },
         "slot": {
-          "anyOf": [
+          "oneOf": [
             {
               "enum": [
                 "top-band",
@@ -332,7 +332,7 @@
           "type": "number"
         },
         "slot": {
-          "anyOf": [
+          "oneOf": [
             {
               "enum": [
                 "top-band",
@@ -482,7 +482,7 @@
           "anyOf": [
             {
               "maxLength": 40,
-              "pattern": "^(d{1,2}|M{1,4}|yy|yyyy|[ .,/\\-])+$",
+              "pattern": "^[dMy .,/\\-]+$",
               "type": "string"
             },
             {
@@ -490,7 +490,7 @@
             }
           ],
           "default": null,
-          "description": "Unicode date pattern made of d, M, yy or yyyy and separators.",
+          "description": "Unicode date pattern: d or dd, M to MMMM, yy or yyyy, and separators.",
           "examples": [
             "dd.MM.yyyy",
             "d.M.yy",
@@ -554,7 +554,7 @@
           "type": "number"
         },
         "slot": {
-          "anyOf": [
+          "oneOf": [
             {
               "enum": [
                 "top-band",
@@ -649,7 +649,7 @@
           "type": "number"
         },
         "slot": {
-          "anyOf": [
+          "oneOf": [
             {
               "enum": [
                 "top-band",
@@ -978,6 +978,7 @@
     },
     "TextStamp": {
       "additionalProperties": false,
+      "description": "A text stamp given here; its size is a text height, as for the headline.",
       "properties": {
         "color": {
           "examples": [
@@ -1007,15 +1008,14 @@
           "type": "number"
         },
         "size": {
-          "default": 0.08,
-          "description": "Longest side, as a share of the frame's shorter side.",
+          "description": "Largest text height, as a share of the frame's shorter side; the renderer shrinks the text to fit its slot.",
           "exclusiveMinimum": 0,
-          "maximum": 0.5,
+          "maximum": 0.25,
           "title": "Size",
           "type": "number"
         },
         "slot": {
-          "anyOf": [
+          "oneOf": [
             {
               "enum": [
                 "top-band",
@@ -1050,6 +1050,7 @@
       "required": [
         "font",
         "color",
+        "size",
         "slot",
         "source",
         "text"
@@ -1133,7 +1134,7 @@
   "$id": "https://github.com/EladBarkay/orenew-framegen/schemas/frame-spec.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "One frame design. This schema checks each field. FrameGen also checks rules across fields that it cannot express: the window keeps at least 20% of the frame; bars, boxes, frame strokes and piece anchors stay inside the frame; portrait is not wider than tall; a radius only for 'rounded' and a mask only for 'mask'; each decoration archetype has its layers; and the headline, date and stamp each have their own slot in each orientation ('under-headline' needs a headline).",
+  "description": "One frame design. This schema checks each field. FrameGen also checks rules across fields that it cannot express: the window keeps at least 20% of the frame; bars, boxes, frame strokes and piece anchors stay inside the frame; portrait is not wider than tall; a radius only for 'rounded' and a mask only for 'mask'; each decoration archetype has its layers; and the headline, date and stamp each have their own slot in each orientation ('under-headline' needs a headline); a Gregorian date pattern shows at least one date field, each run of a letter being a whole field (d, dd, M to MMMM, yy, yyyy).",
   "properties": {
     "aspect": {
       "$ref": "#/$defs/Aspect"

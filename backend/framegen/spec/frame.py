@@ -5,10 +5,20 @@ from typing import Annotated, Literal, Self, get_args
 from pydantic import BeforeValidator, model_validator
 from pydantic_core import PydanticCustomError
 
-from framegen.spec.models import Aspect, Band, Bar, Decoration, Piece, SpecModel, Stroke, Window
+from framegen.spec.models import (
+    Anchor,
+    Aspect,
+    Band,
+    Bar,
+    Decoration,
+    Piece,
+    SpecModel,
+    Stroke,
+    Window,
+)
 from framegen.spec.text import Date, Headline, Orientation, Stamp, slot_in
 
-CORNERS = {"top-start", "top-end", "bottom-start", "bottom-end"}
+CORNERS = {anchor for anchor in get_args(Anchor) if "-" in anchor}
 
 
 def _exact_version(value: object) -> object:

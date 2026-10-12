@@ -24,7 +24,9 @@ class SpecInvalid(ValueError):
 
 
 def read_spec(data: Any) -> FrameSpec:
-    """Validates JSON-like data as a frame spec. Raises SpecInvalid listing every problem."""
+    """Validates JSON-like data as a frame spec. Raises SpecInvalid listing every field
+    problem; the rules across fields run once the fields are valid, and the first rule
+    broken is reported."""
     try:
         return FrameSpec.model_validate(data, by_alias=True, by_name=False)
     except ValidationError as error:
@@ -41,9 +43,8 @@ def read_spec(data: Any) -> FrameSpec:
 
 
 def _json_path(data: Any, location: tuple[str | int, ...]) -> tuple[str | int, ...]:
-    """Pydantic's location as a path into the submitted JSON. Decoration layers are a
-    discriminated union, and Pydantic puts the tags right after a layer's index:
-    ``layers, 0, "vector", "bar", "colour"``. Those tag steps are dropped."""
+    """Pydantic's location as a path into the submitted JSON. Each union in the spec adds
+    its tags as steps right after the union's own place; those steps are dropped."""
     path: list[str | int] = []
     node = data
     tags: list[object] = []
@@ -51,16 +52,27 @@ def _json_path(data: Any, location: tuple[str | int, ...]) -> tuple[str | int, .
         if tags and step == tags[0]:
             tags.pop(0)
             continue
-        tags = []
         if isinstance(node, list) and isinstance(step, int) and 0 <= step < len(node):
             node = node[step]
-            if path[-1:] == ["layers"] and isinstance(node, dict):
-                tags = [node.get("kind")]
-                if node.get("kind") == "vector":
-                    tags.append(node.get("shape"))
         elif isinstance(node, dict) and isinstance(step, str):
             node = node.get(step)
         else:
             node = None
         path.append(step)
+        tags = _union_tags(path, node)
     return tuple(path)
+
+
+def _union_tags(path: list[str | int], node: Any) -> list[object]:
+    """The tags Pydantic puts after this place, if it is a union (in this order)."""
+    if path[-1] == "slot":
+        return ["name" if isinstance(node, str) else "each"]
+    if not isinstance(node, dict):
+        return []
+    if path[-2:-1] == ["layers"] and isinstance(path[-1], int):
+        return [node.get("kind"), *([node.get("shape")] if node.get("kind") == "vector" else [])]
+    if path[-2:-1] == ["formats"] and isinstance(path[-1], int):
+        return [node.get("calendar")]
+    if path == ["stamp"]:
+        return [node.get("source")]
+    return []
