@@ -8,6 +8,7 @@
   import {
     choose,
     createStudio,
+    forget,
     remembered,
     select,
     workspace,
@@ -20,14 +21,18 @@
   let error: MessageKey | null = $state(null);
   // The page's list, plus studios created here since it was loaded.
   let added: Workspace[] = $state([]);
-  const workspaces = $derived([...data.workspaces, ...added]);
+  const workspaces = $derived([
+    ...data.workspaces,
+    ...added.filter((a) => !data.workspaces.some((w) => w.id === a.id)),
+  ]);
   let studioName = $state("");
 
   const ROLES = { owner: "role.owner", admin: "role.admin", member: "role.member" } as const;
 
   $effect.pre(() => {
-    const chosen = choose(workspaces, workspace.current?.id ?? remembered());
-    if (chosen && chosen.id !== workspace.current?.id) select(chosen);
+    const preferred = [workspace.current?.id ?? null, remembered(data.user.id)];
+    const chosen = choose(workspaces, preferred);
+    if (chosen && chosen.id !== workspace.current?.id) select(chosen, data.user.id);
   });
 
   function label(w: Workspace): string {
@@ -38,7 +43,7 @@
   function pick(event: Event) {
     const id = (event.currentTarget as HTMLSelectElement).value;
     const chosen = workspaces.find((w) => w.id === id);
-    if (chosen) select(chosen);
+    if (chosen) select(chosen, data.user.id);
   }
 
   async function addStudio(event: SubmitEvent) {
@@ -46,13 +51,13 @@
     error = null;
     try {
       const result = await createStudio(studioName.trim());
-      if (result && "id" in result) {
-        added = [...added, result];
-        select(result);
-        studioName = "";
+      if (typeof result === "string") {
+        error = result;
         return;
       }
-      error = errorKey(result);
+      added = [...added, result];
+      select(result, data.user.id);
+      studioName = "";
     } catch {
       error = errorKey(undefined);
     }
@@ -70,6 +75,7 @@
       error = errorKey(undefined);
       return;
     }
+    forget();
     await goto(resolve("/signin"));
   }
 </script>

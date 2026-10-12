@@ -10,16 +10,31 @@ import { api, type User } from "./api.ts";
  * another error, with 503. The error page tells the two apart.
  */
 export async function currentUser(ask = () => api.GET("/v1/me")): Promise<User | null> {
-  let answer;
+  const { data, response } = await answerOf(ask);
+  if (data) return data;
+  if (response.status === 401) return null;
+  failed(response.status);
+}
+
+/** The API's answer; a request that got none fails with 502. */
+export async function answerOf<T>(ask: () => Promise<T>): Promise<T> {
   try {
-    answer = await ask();
+    return await ask();
   } catch {
     error(502, "no answer");
   }
-  const { data, response } = answer;
-  if (data) return data;
-  if (response.status === 401) return null;
-  error([502, 504].includes(response.status) ? 502 : 503, `the API answered ${response.status}`);
+}
+
+/**
+ * For an error answer during a page's load: 401 sends the visitor to sign-in (to come
+ * back to `here`), 502/504 mean the API cannot be reached, anything else that it is not
+ * working right now.
+ */
+export function failed(status: number, here?: URL): never {
+  if (status === 401 && here) {
+    redirect(307, withNext(resolve("/signin"), here.pathname + here.search));
+  }
+  error([502, 504].includes(status) ? 502 : 503, `the API answered ${status}`);
 }
 
 /**
@@ -28,8 +43,7 @@ export async function currentUser(ask = () => api.GET("/v1/me")): Promise<User |
  */
 export async function requireUser(here: URL): Promise<User> {
   const user = await currentUser();
-  if (user === null) redirect(307, withNext(resolve("/signin"), here.pathname + here.search));
-  return user;
+  return user ?? failed(401, here);
 }
 
 /** `path` with `?next=` set, when there is a page to go back to. */
