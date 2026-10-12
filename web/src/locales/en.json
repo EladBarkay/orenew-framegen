@@ -5,5 +5,22 @@
   "health.down": "The API cannot be reached.",
   "footer.licence": "FrameGen is free software under the {licence}.",
   "footer.licence_name": "GNU AGPL, version 3",
-  "footer.source": "Source code"
+  "footer.source": "Source code",
+  "home.signed_in_as": "Signed in as {name}.",
+  "auth.sign_out": "Sign out",
+  "auth.sign_in": "Sign in",
+  "auth.sign_up": "Create an account",
+  "auth.email": "Email",
+  "auth.password": "Password",
+  "auth.password_hint": "At least 10 characters.",
+  "auth.name": "Your name",
+  "auth.no_account": "No account yet? {link}",
+  "auth.have_account": "Already have an account? {link}",
+  "error.invalid_credentials": "The email or password is wrong.",
+  "error.email_taken": "An account with this email already exists. Sign in instead.",
+  "error.validation_failed": "Please check the fields and try again.",
+  "error.cross_site_request": "This request came from another site and was refused.",
+  "error.unauthenticated": "Please sign in again.",
+  "error.network": "FrameGen cannot be reached. Check your connection and try again.",
+  "error.unknown": "Something went wrong. Please try again."
 }
