@@ -1,4 +1,4 @@
-"""The frame spec: window and decoration (DESIGN.md sections 4.1 and 4.4).
+"""The frame spec's building blocks: window and decoration (DESIGN.md 4.1 and 4.4).
 
 All geometry is relative: fractions of the frame, so one spec draws at any size. JSON
 names are camelCase, as in DESIGN.md; unknown fields are rejected, so a typo is an error
@@ -7,7 +7,7 @@ rather than a silently ignored setting.
 
 from typing import Annotated, Literal, Self
 
-from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic.alias_generators import to_camel
 from pydantic_core import PydanticCustomError
 
@@ -266,21 +266,3 @@ class Decoration(SpecModel):
     layers: list[Layer] = Field(
         max_length=64, description="Drawn in order: the first is at the bottom."
     )
-
-
-def _exact_version(value: object) -> object:
-    # Literal compares by equality, and True == 1.0 == 1 in Python.
-    if type(value) is not int:
-        raise PydanticCustomError("int_type", "Input should be a valid integer")
-    return value
-
-
-class FrameSpec(SpecModel):
-    """One frame design."""
-
-    # The headline, date and stamp come with T-11b.
-
-    spec_version: Annotated[Literal[1], BeforeValidator(_exact_version)]
-    aspect: Aspect
-    window: Window
-    decoration: Decoration

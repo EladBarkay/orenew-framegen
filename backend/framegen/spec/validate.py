@@ -5,7 +5,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from framegen.spec.models import FrameSpec
+from framegen.spec.frame import FrameSpec
 
 
 @dataclass(frozen=True)

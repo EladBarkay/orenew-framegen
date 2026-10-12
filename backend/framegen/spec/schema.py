@@ -4,7 +4,7 @@ import json
 import sys
 from pathlib import Path
 
-from framegen.spec.models import FrameSpec
+from framegen.spec.frame import FrameSpec
 
 SCHEMA_ID = "https://github.com/EladBarkay/orenew-framegen/schemas/frame-spec.schema.json"
 
@@ -17,10 +17,12 @@ def render() -> str:
     }
     schema["description"] = (
         f"{schema['description']} This schema checks each field. FrameGen also checks "
-        "rules across fields that it cannot express (the window keeps at least 20% of "
-        "the frame, bars, boxes and frame strokes stay inside the frame, portrait is not "
-        "wider than tall, a "
-        "radius only for 'rounded' and a mask only for 'mask')."
+        "rules across fields that it cannot express: the window keeps at least 20% of the "
+        "frame; bars, boxes, frame strokes and piece anchors stay inside the frame; "
+        "portrait is not wider than tall; a radius only for 'rounded' and a mask only for "
+        "'mask'; each decoration archetype has its layers; and the headline, date and "
+        "stamp each have their own slot in each orientation ('under-headline' needs a "
+        "headline)."
     )
     return json.dumps(schema, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
 

@@ -190,6 +190,186 @@
       "title": "Box",
       "type": "object"
     },
+    "BrandKitStamp": {
+      "additionalProperties": false,
+      "description": "The workspace's stamp from its brand kit.",
+      "properties": {
+        "opacity": {
+          "default": 1,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Opacity",
+          "type": "number"
+        },
+        "size": {
+          "default": 0.08,
+          "description": "Longest side, as a share of the frame's shorter side.",
+          "exclusiveMinimum": 0,
+          "maximum": 0.5,
+          "title": "Size",
+          "type": "number"
+        },
+        "slot": {
+          "anyOf": [
+            {
+              "enum": [
+                "top-band",
+                "bottom-band",
+                "top-start",
+                "top-end",
+                "bottom-start",
+                "bottom-end",
+                "under-headline",
+                "start-edge",
+                "end-edge"
+              ],
+              "type": "string"
+            },
+            {
+              "$ref": "#/$defs/SlotPerOrientation"
+            }
+          ],
+          "title": "Slot"
+        },
+        "source": {
+          "const": "brand-kit",
+          "title": "Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "slot",
+        "source"
+      ],
+      "title": "BrandKitStamp",
+      "type": "object"
+    },
+    "Date": {
+      "additionalProperties": false,
+      "properties": {
+        "afterSunset": {
+          "default": false,
+          "description": "The event is in the evening, so its Hebrew date is the next day's.",
+          "title": "Aftersunset",
+          "type": "boolean"
+        },
+        "color": {
+          "examples": [
+            "#c9a24a",
+            "#00000080"
+          ],
+          "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$",
+          "title": "Color",
+          "type": "string"
+        },
+        "font": {
+          "description": "A workspace font (font_…) or a built-in font by name (heebo, suez-one).",
+          "examples": [
+            "heebo",
+            "amatic-sc-bold"
+          ],
+          "maxLength": 40,
+          "pattern": "^(font_[a-z2-7]{26}|[a-z0-9]+(-[a-z0-9]+)*)$",
+          "title": "Font",
+          "type": "string"
+        },
+        "formats": {
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "gregorian": "#/$defs/GregorianFormat",
+                "hebrew": "#/$defs/HebrewFormat"
+              },
+              "propertyName": "calendar"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/GregorianFormat"
+              },
+              {
+                "$ref": "#/$defs/HebrewFormat"
+              }
+            ]
+          },
+          "maxItems": 3,
+          "minItems": 1,
+          "title": "Formats",
+          "type": "array"
+        },
+        "joiner": {
+          "anyOf": [
+            {
+              "maxLength": 10,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": " · ",
+          "description": "Between formats on one line; null stacks them on separate lines.",
+          "title": "Joiner"
+        },
+        "override": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Text typed by hand, shown instead of the formats.",
+          "title": "Override"
+        },
+        "size": {
+          "description": "Largest text height, as a share of the frame's shorter side; the renderer shrinks the text to fit its slot.",
+          "exclusiveMinimum": 0,
+          "maximum": 0.25,
+          "title": "Size",
+          "type": "number"
+        },
+        "slot": {
+          "anyOf": [
+            {
+              "enum": [
+                "top-band",
+                "bottom-band",
+                "top-start",
+                "top-end",
+                "bottom-start",
+                "bottom-end",
+                "under-headline",
+                "start-edge",
+                "end-edge"
+              ],
+              "type": "string"
+            },
+            {
+              "$ref": "#/$defs/SlotPerOrientation"
+            }
+          ],
+          "title": "Slot"
+        },
+        "value": {
+          "format": "date",
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "font",
+        "color",
+        "size",
+        "value",
+        "formats",
+        "slot"
+      ],
+      "title": "Date",
+      "type": "object"
+    },
     "Decoration": {
       "additionalProperties": false,
       "properties": {
@@ -282,6 +462,226 @@
         "layers"
       ],
       "title": "Decoration",
+      "type": "object"
+    },
+    "GregorianFormat": {
+      "additionalProperties": false,
+      "properties": {
+        "calendar": {
+          "const": "gregorian",
+          "title": "Calendar",
+          "type": "string"
+        },
+        "locale": {
+          "default": "he",
+          "pattern": "^[a-z]{2,3}(-[A-Z][a-z]{3})?(-[A-Z]{2})?$",
+          "title": "Locale",
+          "type": "string"
+        },
+        "pattern": {
+          "anyOf": [
+            {
+              "maxLength": 40,
+              "pattern": "^(d{1,2}|M{1,4}|yy|yyyy|[ .,/\\-])+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Unicode date pattern made of d, M, yy or yyyy and separators.",
+          "examples": [
+            "dd.MM.yyyy",
+            "d.M.yy",
+            "d MMMM yyyy"
+          ],
+          "title": "Pattern"
+        },
+        "style": {
+          "anyOf": [
+            {
+              "enum": [
+                "short",
+                "medium",
+                "long",
+                "full"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Style"
+        }
+      },
+      "required": [
+        "calendar"
+      ],
+      "title": "GregorianFormat",
+      "type": "object"
+    },
+    "Headline": {
+      "additionalProperties": false,
+      "properties": {
+        "color": {
+          "examples": [
+            "#c9a24a",
+            "#00000080"
+          ],
+          "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$",
+          "title": "Color",
+          "type": "string"
+        },
+        "font": {
+          "description": "A workspace font (font_…) or a built-in font by name (heebo, suez-one).",
+          "examples": [
+            "heebo",
+            "amatic-sc-bold"
+          ],
+          "maxLength": 40,
+          "pattern": "^(font_[a-z2-7]{26}|[a-z0-9]+(-[a-z0-9]+)*)$",
+          "title": "Font",
+          "type": "string"
+        },
+        "size": {
+          "description": "Largest text height, as a share of the frame's shorter side; the renderer shrinks the text to fit its slot.",
+          "exclusiveMinimum": 0,
+          "maximum": 0.25,
+          "title": "Size",
+          "type": "number"
+        },
+        "slot": {
+          "anyOf": [
+            {
+              "enum": [
+                "top-band",
+                "bottom-band",
+                "top-start",
+                "top-end",
+                "bottom-start",
+                "bottom-end",
+                "under-headline",
+                "start-edge",
+                "end-edge"
+              ],
+              "type": "string"
+            },
+            {
+              "$ref": "#/$defs/SlotPerOrientation"
+            }
+          ],
+          "title": "Slot"
+        },
+        "text": {
+          "maxLength": 200,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "font",
+        "color",
+        "size",
+        "text",
+        "slot"
+      ],
+      "title": "Headline",
+      "type": "object"
+    },
+    "HebrewFormat": {
+      "additionalProperties": false,
+      "properties": {
+        "calendar": {
+          "const": "hebrew",
+          "title": "Calendar",
+          "type": "string"
+        },
+        "numerals": {
+          "default": "hebrew",
+          "enum": [
+            "hebrew",
+            "digits"
+          ],
+          "title": "Numerals",
+          "type": "string"
+        },
+        "style": {
+          "default": "day-month-year",
+          "enum": [
+            "day-month-year",
+            "month-year",
+            "year"
+          ],
+          "title": "Style",
+          "type": "string"
+        }
+      },
+      "required": [
+        "calendar"
+      ],
+      "title": "HebrewFormat",
+      "type": "object"
+    },
+    "ImageStamp": {
+      "additionalProperties": false,
+      "properties": {
+        "image": {
+          "pattern": "^ast_[a-z2-7]{26}$",
+          "title": "Image",
+          "type": "string"
+        },
+        "opacity": {
+          "default": 1,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Opacity",
+          "type": "number"
+        },
+        "size": {
+          "default": 0.08,
+          "description": "Longest side, as a share of the frame's shorter side.",
+          "exclusiveMinimum": 0,
+          "maximum": 0.5,
+          "title": "Size",
+          "type": "number"
+        },
+        "slot": {
+          "anyOf": [
+            {
+              "enum": [
+                "top-band",
+                "bottom-band",
+                "top-start",
+                "top-end",
+                "bottom-start",
+                "bottom-end",
+                "under-headline",
+                "start-edge",
+                "end-edge"
+              ],
+              "type": "string"
+            },
+            {
+              "$ref": "#/$defs/SlotPerOrientation"
+            }
+          ],
+          "title": "Slot"
+        },
+        "source": {
+          "const": "image",
+          "title": "Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "slot",
+        "source",
+        "image"
+      ],
+      "title": "ImageStamp",
       "type": "object"
     },
     "Insets": {
@@ -472,6 +872,47 @@
       "title": "Shape",
       "type": "object"
     },
+    "SlotPerOrientation": {
+      "additionalProperties": false,
+      "properties": {
+        "landscape": {
+          "enum": [
+            "top-band",
+            "bottom-band",
+            "top-start",
+            "top-end",
+            "bottom-start",
+            "bottom-end",
+            "under-headline",
+            "start-edge",
+            "end-edge"
+          ],
+          "title": "Landscape",
+          "type": "string"
+        },
+        "portrait": {
+          "enum": [
+            "top-band",
+            "bottom-band",
+            "top-start",
+            "top-end",
+            "bottom-start",
+            "bottom-end",
+            "under-headline",
+            "start-edge",
+            "end-edge"
+          ],
+          "title": "Portrait",
+          "type": "string"
+        }
+      },
+      "required": [
+        "portrait",
+        "landscape"
+      ],
+      "title": "SlotPerOrientation",
+      "type": "object"
+    },
     "Stroke": {
       "additionalProperties": false,
       "description": "A line around the window, or along the frame's outer edge. `offset` is the gap\nto what it surrounds: outwards from the window, inwards from the frame's edge. A\nwindow stroke that reaches past the frame is clipped there.",
@@ -533,6 +974,87 @@
         "color"
       ],
       "title": "Stroke",
+      "type": "object"
+    },
+    "TextStamp": {
+      "additionalProperties": false,
+      "properties": {
+        "color": {
+          "examples": [
+            "#c9a24a",
+            "#00000080"
+          ],
+          "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$",
+          "title": "Color",
+          "type": "string"
+        },
+        "font": {
+          "description": "A workspace font (font_…) or a built-in font by name (heebo, suez-one).",
+          "examples": [
+            "heebo",
+            "amatic-sc-bold"
+          ],
+          "maxLength": 40,
+          "pattern": "^(font_[a-z2-7]{26}|[a-z0-9]+(-[a-z0-9]+)*)$",
+          "title": "Font",
+          "type": "string"
+        },
+        "opacity": {
+          "default": 1,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Opacity",
+          "type": "number"
+        },
+        "size": {
+          "default": 0.08,
+          "description": "Longest side, as a share of the frame's shorter side.",
+          "exclusiveMinimum": 0,
+          "maximum": 0.5,
+          "title": "Size",
+          "type": "number"
+        },
+        "slot": {
+          "anyOf": [
+            {
+              "enum": [
+                "top-band",
+                "bottom-band",
+                "top-start",
+                "top-end",
+                "bottom-start",
+                "bottom-end",
+                "under-headline",
+                "start-edge",
+                "end-edge"
+              ],
+              "type": "string"
+            },
+            {
+              "$ref": "#/$defs/SlotPerOrientation"
+            }
+          ],
+          "title": "Slot"
+        },
+        "source": {
+          "const": "text",
+          "title": "Source",
+          "type": "string"
+        },
+        "text": {
+          "maxLength": 200,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "font",
+        "color",
+        "slot",
+        "source",
+        "text"
+      ],
+      "title": "TextStamp",
       "type": "object"
     },
     "Window": {
@@ -611,18 +1133,70 @@
   "$id": "https://github.com/EladBarkay/orenew-framegen/schemas/frame-spec.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "One frame design. This schema checks each field. FrameGen also checks rules across fields that it cannot express (the window keeps at least 20% of the frame, bars, boxes and frame strokes stay inside the frame, portrait is not wider than tall, a radius only for 'rounded' and a mask only for 'mask').",
+  "description": "One frame design. This schema checks each field. FrameGen also checks rules across fields that it cannot express: the window keeps at least 20% of the frame; bars, boxes, frame strokes and piece anchors stay inside the frame; portrait is not wider than tall; a radius only for 'rounded' and a mask only for 'mask'; each decoration archetype has its layers; and the headline, date and stamp each have their own slot in each orientation ('under-headline' needs a headline).",
   "properties": {
     "aspect": {
       "$ref": "#/$defs/Aspect"
     },
+    "date": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Date"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
     "decoration": {
       "$ref": "#/$defs/Decoration"
+    },
+    "headline": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Headline"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     },
     "specVersion": {
       "const": 1,
       "title": "Specversion",
       "type": "integer"
+    },
+    "stamp": {
+      "anyOf": [
+        {
+          "discriminator": {
+            "mapping": {
+              "brand-kit": "#/$defs/BrandKitStamp",
+              "image": "#/$defs/ImageStamp",
+              "text": "#/$defs/TextStamp"
+            },
+            "propertyName": "source"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/BrandKitStamp"
+            },
+            {
+              "$ref": "#/$defs/TextStamp"
+            },
+            {
+              "$ref": "#/$defs/ImageStamp"
+            }
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Stamp"
     },
     "window": {
       "$ref": "#/$defs/Window"
