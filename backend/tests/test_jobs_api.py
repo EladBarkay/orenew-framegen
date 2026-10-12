@@ -32,6 +32,8 @@ def sign_up(client: TestClient) -> str:
 def client(settings: Settings) -> Iterator[TestClient]:
     with TestClient(create_app(readiness_checks={}, settings=settings)) as test_client:
         yield test_client
+    # Run whatever a test left queued, so it does not run inside a later test.
+    asyncio.run(run_worker(settings, wait=False))
 
 
 def test_a_demo_job_is_followed_to_completion(client: TestClient, settings: Settings) -> None:
@@ -54,7 +56,8 @@ def test_a_demo_job_is_followed_to_completion(client: TestClient, settings: Sett
 def test_a_failed_job_says_why(client: TestClient, settings: Settings) -> None:
     workspace_id = sign_up(client)
     job = client.post(
-        f"/v1/workspaces/{workspace_id}/jobs/demo", json={"steps": 2, "fail_with": "demo_failed"}
+        f"/v1/workspaces/{workspace_id}/jobs/demo",
+        json={"steps": 2, "fail_with": "demo_failed"},
     ).json()
     asyncio.run(run_worker(settings, wait=False))
     done = client.get(f"/v1/workspaces/{workspace_id}/jobs/{job['id']}").json()
@@ -77,6 +80,43 @@ def test_another_workspace_cannot_see_a_job(client: TestClient) -> None:
 
 def test_demo_job_limits(client: TestClient) -> None:
     workspace_id = sign_up(client)
-    for body in ({"steps": 0}, {"steps": 21}, {"fail_with": "Not A Code"}):
+    for body in (
+        {"steps": 0},
+        {"steps": 21},
+        {"fail_with": "Not A Code"},
+        {"fail_with": "internal"},
+    ):
         response = client.post(f"/v1/workspaces/{workspace_id}/jobs/demo", json=body)
         assert response.status_code == 422, body
+
+
+def test_one_demo_job_at_a_time(client: TestClient, settings: Settings) -> None:
+    workspace_id = sign_up(client)
+    path = f"/v1/workspaces/{workspace_id}/jobs/demo"
+    assert client.post(path, json={"steps": 1}).status_code == 202
+    second = client.post(path, json={"steps": 1})
+    assert second.status_code == 409
+    assert second.json()["error"]["code"] == "demo_job_running"
+    asyncio.run(run_worker(settings, wait=False))
+    assert client.post(path, json={"steps": 1}).status_code == 202
+
+
+class RefusingQueue:
+    """Stands in for the queue's task when the queue is down."""
+
+    async def defer_async(self, **arguments: object) -> None:
+        raise ConnectionError("queue down")
+
+
+def test_a_queue_that_cannot_take_the_job(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workspace_id = sign_up(client)
+    queue = client.app.state.queue  # type: ignore[attr-defined]
+    monkeypatch.setattr(queue, "configure_task", lambda name: RefusingQueue())
+    response = client.post(f"/v1/workspaces/{workspace_id}/jobs/demo", json={})
+    assert response.status_code == 503
+    error = response.json()["error"]
+    assert error["code"] == "queue_unavailable"
+    job = client.get(f"/v1/workspaces/{workspace_id}/jobs/{error['detail']['job_id']}").json()
+    assert (job["status"], job["error"]["code"]) == ("failed", "queue_unavailable")

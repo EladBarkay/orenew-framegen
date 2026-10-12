@@ -7,12 +7,11 @@ from typing import Any
 
 import psycopg
 import pytest
-from procrastinate.exceptions import AppNotOpen
 from sqlalchemy import insert, select
 
 from framegen.db.engine import async_engine, sync_engine
 from framegen.db.tables import jobs, workspaces
-from framegen.jobs.queue import queue_app, start_job
+from framegen.jobs.queue import QueueUnavailable, queue_app, start_job
 from framegen.jobs.runner import JOB_EVENTS, JobFailed, Progress, run_job
 from framegen.settings import Settings
 from framegen.worker.main import run as run_worker
@@ -110,7 +109,7 @@ def test_a_job_the_queue_cannot_take_is_recorded_as_failed(
         engine = async_engine(settings)
         app = queue_app(settings)  # never opened: deferring fails
         try:
-            with pytest.raises(AppNotOpen):
+            with pytest.raises(QueueUnavailable):
                 await start_job(
                     app,
                     engine,

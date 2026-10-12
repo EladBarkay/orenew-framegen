@@ -508,7 +508,7 @@ renderer version that drew it.
 - Resource IDs are prefixed strings (`prj_…`, `ver_…`, `job_…`, `ast_…`).
 - Every mutating request accepts an `Idempotency-Key` header.
 - Long work returns `202 Accepted` with a job. Jobs are followed by polling
-  `GET /v1/jobs/{id}`, by server-sent events at `GET /v1/jobs/{id}/events`, or by
+  `GET /v1/workspaces/{workspace_id}/jobs/{id}`, by server-sent events at its `/events`, or by
   webhooks registered per workspace (signed).
 - Errors are `{ "error": { "code": "provider_missing_capability", "message": "…",
   "detail": { … } } }` with stable codes, so clients (like Orenew, which translates

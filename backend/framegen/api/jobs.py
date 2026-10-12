@@ -18,7 +18,7 @@ from framegen.api.access import MemberAccess
 from framegen.api.auth import Engine
 from framegen.api.errors import ApiError
 from framegen.db.tables import jobs
-from framegen.jobs.queue import start_job
+from framegen.jobs.queue import QueueUnavailable, start_job
 
 router = APIRouter(tags=["jobs"])
 
@@ -46,8 +46,11 @@ class DemoJob(BaseModel):
     fail_with: str | None = Field(
         default=None,
         max_length=64,
-        pattern="^[a-z_]+$",
-        description="Fail halfway with this error code, to try out error handling.",
+        pattern="^demo_[a-z_]+$",
+        description=(
+            "Fail halfway with this error code, to try out error handling. Starts with "
+            "demo_, so it is never mistaken for a real failure."
+        ),
     )
 
 
@@ -55,22 +58,12 @@ JobId = Annotated[str, Path(max_length=40, description="The job's ID.")]
 
 
 def job_from_row(row: Any) -> Job:
-    return Job(
-        id=row["id"],
-        type=row["type"],
-        status=row["status"],
-        progress=row["progress"],
-        step=row["step"],
-        result=row["result"],
-        error=(
-            JobError(code=row["error_code"], message=row["error_message"] or "")
-            if row["error_code"]
-            else None
-        ),
-        created_at=row["created_at"],
-        started_at=row["started_at"],
-        finished_at=row["finished_at"],
+    error = (
+        {"code": row["error_code"], "message": row["error_message"] or ""}
+        if row["error_code"]
+        else None
     )
+    return Job.model_validate({**row, "error": error})
 
 
 async def find_job(engine: AsyncEngine, workspace_id: str, job_id: str) -> Job:
@@ -91,7 +84,19 @@ async def start_demo_job(
     body: DemoJob, access: MemberAccess, engine: Engine, request: Request, response: Response
 ) -> Job:
     """Start a job that only counts through its steps, for checking that jobs work in a
-    deployment and for trying out a client. It uses no AI and costs nothing."""
+    deployment and for trying out a client. It uses no AI and costs nothing. A workspace
+    can have one demo job at a time, so the shared queue stays free for real work."""
+    active = (
+        select(jobs.c.id)
+        .where(jobs.c.workspace_id == access.workspace_id, jobs.c.type == "demo")
+        .where(jobs.c.status.in_(("queued", "running")))
+        .limit(1)
+    )
+    async with engine.connect() as conn:
+        if (await conn.execute(active)).first() is not None:
+            raise ApiError(
+                409, "demo_job_running", "This workspace already has a demo job running."
+            )
     try:
         job_id = await start_job(
             request.app.state.queue,
@@ -101,8 +106,10 @@ async def start_demo_job(
             arguments={"steps": body.steps, "fail_with": body.fail_with},
             created_by=access.user.id,
         )
-    except Exception as error:
-        raise ApiError(503, "queue_unavailable", "The job could not be queued.") from error
+    except QueueUnavailable as error:
+        raise ApiError(
+            503, "queue_unavailable", "The job could not be queued.", {"job_id": error.job_id}
+        ) from error
     response.headers["Location"] = f"/v1/workspaces/{access.workspace_id}/jobs/{job_id}"
     return await find_job(engine, access.workspace_id, job_id)
 

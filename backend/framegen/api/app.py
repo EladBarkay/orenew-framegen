@@ -77,10 +77,10 @@ def create_app(
         # Neither connects until used.
         app.state.storage = s3_client(app_settings)
         app.state.presigner = presign_client(app_settings)
-        # The job queue: opening it only prepares a connection pool, which connects lazily.
+        # The job queue; its connection pool connects only when a job is started.
         app.state.queue = queue_app(app_settings)
-        await app.state.queue.open_async()
         try:
+            await app.state.queue.open_async()
             yield
         finally:
             await wait_for_pending_keys()

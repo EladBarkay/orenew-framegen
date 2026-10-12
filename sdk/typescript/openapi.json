@@ -241,14 +241,14 @@
             "anyOf": [
               {
                 "maxLength": 64,
-                "pattern": "^[a-z_]+$",
+                "pattern": "^demo_[a-z_]+$",
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "description": "Fail halfway with this error code, to try out error handling.",
+            "description": "Fail halfway with this error code, to try out error handling. Starts with demo_, so it is never mistaken for a real failure.",
             "title": "Fail With"
           },
           "steps": {
@@ -1835,7 +1835,7 @@
     },
     "/v1/workspaces/{workspace_id}/jobs/demo": {
       "post": {
-        "description": "Start a job that only counts through its steps, for checking that jobs work in a\ndeployment and for trying out a client. It uses no AI and costs nothing.",
+        "description": "Start a job that only counts through its steps, for checking that jobs work in a\ndeployment and for trying out a client. It uses no AI and costs nothing. A workspace\ncan have one demo job at a time, so the shared queue stays free for real work.",
         "operationId": "startDemoJob",
         "parameters": [
           {

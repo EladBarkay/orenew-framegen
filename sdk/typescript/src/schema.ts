@@ -289,7 +289,8 @@ export interface paths {
         /**
          * Start Demo Job
          * @description Start a job that only counts through its steps, for checking that jobs work in a
-         *     deployment and for trying out a client. It uses no AI and costs nothing.
+         *     deployment and for trying out a client. It uses no AI and costs nothing. A workspace
+         *     can have one demo job at a time, so the shared queue stays free for real work.
          */
         post: operations["startDemoJob"];
         delete?: never;
@@ -470,7 +471,7 @@ export interface components {
         DemoJob: {
             /**
              * Fail With
-             * @description Fail halfway with this error code, to try out error handling.
+             * @description Fail halfway with this error code, to try out error handling. Starts with demo_, so it is never mistaken for a real failure.
              */
             fail_with?: string | null;
             /**
