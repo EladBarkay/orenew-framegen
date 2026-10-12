@@ -5,8 +5,16 @@ same spec, size and images always give the same text, and so the same pixels.
 
 Layers are drawn in their order, the first at the bottom. Each is cut by the window,
 except layers marked to overlap it. Text comes with T-13.
+
+Only placement follows the reading direction (start is the right side in Hebrew).
+Rotation is clockwise and artwork is drawn as given in both directions: flipping it is
+the spec's `mirror`, since not every piece can be mirrored (a bottle with a label).
+
+Each SVG is meant to be drawn on its own, as a document or an <img>: its mask and filter
+IDs are fixed, so two inline in one page would share them.
 """
 
+import re
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from typing import Literal
@@ -17,6 +25,8 @@ from framegen.spec.models import ANCHOR_POINTS, Band, Bar, Layer, Piece, Shape, 
 from framegen.spec.text import Orientation
 
 Direction = Literal["rtl", "ltr"]
+
+IMAGE_HREF = re.compile(r"data:image/(png|jpeg|webp|svg\+xml);base64,[A-Za-z0-9+/]*={0,2}\Z")
 """Reading direction: in right-to-left text (Hebrew), start is the right side."""
 
 
@@ -25,11 +35,14 @@ class Image:
     """A piece's or a mask's pixels, as the renderer is given them."""
 
     href: str
-    """A data: URL (the renderer loads nothing from the network)."""
+    """A data: URL of a PNG, JPEG, WebP or SVG: the renderer loads nothing from the
+    network or the disk."""
     width: int
     height: int
 
     def __post_init__(self) -> None:
+        if not IMAGE_HREF.match(self.href):
+            raise ValueError("an image must be a data: URL of a PNG, JPEG, WebP or SVG")
         if self.width < 1 or self.height < 1:
             raise ValueError("an image must be at least 1x1 pixels")
 
@@ -62,6 +75,8 @@ def render_svg(
     every piece and window mask the spec names, by ID."""
     if width < 1 or height < 1:
         raise ValueError("the size must be at least 1x1 pixels")
+    if direction not in ("rtl", "ltr"):
+        raise ValueError(f"the direction is 'rtl' or 'ltr', not {direction!r}")
     if (orientation == "portrait" and width > height) or (
         orientation == "landscape" and width < height
     ):
@@ -113,11 +128,6 @@ class _Frame:
         """A share of the width from the start side, in pixels from the left."""
         return (1 - inline) * self.width if self.rtl else inline * self.width
 
-    def angle(self, degrees: float) -> float:
-        """A clockwise turn as written for left-to-right; right-to-left mirrors it, as it
-        mirrors positions, so both directions draw mirror images."""
-        return -degrees if self.rtl else degrees
-
     def image(self, image_id: str) -> Image:
         try:
             return self.images[image_id]
@@ -129,12 +139,10 @@ class _Frame:
     def window_rect(self, window: Window, orientation: Orientation) -> Rect:
         inset = getattr(window, orientation).inset
         left, right = (inset.end, inset.start) if self.rtl else (inset.start, inset.end)
-        return Rect(
-            left * self.width,
-            inset.top * self.height,
-            (1 - left - right) * self.width,
-            (1 - inset.top - inset.bottom) * self.height,
-        )
+        # Whole pixels, so no pixel is half window and half decoration.
+        x0, x1 = round(left * self.width), round((1 - right) * self.width)
+        y0, y1 = round(inset.top * self.height), round((1 - inset.bottom) * self.height)
+        return Rect(x0, y0, x1 - x0, y1 - y0)
 
     def window_cut(self, window: Window, rect: Rect) -> Iterator[str]:
         """A mask that is white (kept) everywhere but the window."""
@@ -145,7 +153,8 @@ class _Frame:
         yield f'<rect x="0" y="0" width="{self.width}" height="{self.height}" fill="#ffffff"/>'
         if window.shape == "mask":
             assert window.mask is not None
-            # The mask image's alpha is the window: drawn black where it is opaque.
+            # The mask image's alpha is the window: drawn black where it is opaque, keeping
+            # its proportions and centred, so it is the same shape in both orientations.
             yield (
                 '<filter id="alpha-to-black"><feColorMatrix type="matrix" '
                 'values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0"/></filter>'
@@ -153,7 +162,7 @@ class _Frame:
             yield (
                 f"<image href={quoteattr(self.image(window.mask).href)} "
                 f'x="{_n(rect.x)}" y="{_n(rect.y)}" width="{_n(rect.width)}" '
-                f'height="{_n(rect.height)}" preserveAspectRatio="none" '
+                f'height="{_n(rect.height)}" preserveAspectRatio="xMidYMid meet" '
                 f'filter="url(#alpha-to-black)"/>'
             )
         else:
@@ -234,8 +243,7 @@ class _Frame:
         left = self.x(box.x + box.width) if self.rtl else self.x(box.x)
         top = box.y * self.height
         cx, cy = left + w / 2, top + h / 2
-        angle = self.angle(shape.rotate)
-        turn = f' transform="rotate({_n(angle)} {_n(cx)} {_n(cy)})"' if angle else ""
+        turn = f' transform="rotate({_n(shape.rotate)} {_n(cx)} {_n(cy)})"' if shape.rotate else ""
         paint = _paint(shape.color, shape.opacity)
         if shape.shape == "ellipse":
             return (
@@ -257,8 +265,8 @@ class _Frame:
         top = ay - block * h
         cx, cy = left + w / 2, top + h / 2
         steps = []
-        if angle := self.angle(piece.rotate):
-            steps.append(f"rotate({_n(angle)} {_n(cx)} {_n(cy)})")
+        if piece.rotate:
+            steps.append(f"rotate({_n(piece.rotate)} {_n(cx)} {_n(cy)})")
         if piece.mirror != "none":
             sx, sy = (-1, 1) if piece.mirror == "inline" else (1, -1)
             steps.append(

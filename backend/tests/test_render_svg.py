@@ -98,6 +98,7 @@ def test_a_mask_window_uses_its_image() -> None:
     image = root.find("s:defs/s:mask/s:image", NS)
     assert image is not None and image.attrib["href"] == IMAGES[MASK].href
     assert image.attrib["filter"] == "url(#alpha-to-black)"
+    assert image.attrib["preserveAspectRatio"] == "xMidYMid meet"
     assert numbers(image, "x", "y", "width", "height") == (150, 150, 800, 1050)
     with pytest.raises(MissingImage):
         render_svg(spec([band("top")], shape="mask", mask=MASK), "portrait", 100, 150)
@@ -153,7 +154,7 @@ def test_shapes_rotate_about_their_centre_and_follow_the_direction() -> None:
     }
     (rtl,) = layers(draw(spec([shape])))
     assert numbers(rtl, "x", "y", "width", "height") == (600, 300, 300, 150)
-    assert rtl.attrib["transform"] == "rotate(-30 750 375)"  # mirrored, as its place is
+    assert rtl.attrib["transform"] == "rotate(30 750 375)"  # clockwise in both directions
     (ltr,) = layers(draw(spec([{**shape, "shape": "ellipse", "rotate": 0}]), "ltr"))
     assert numbers(ltr, "cx", "cy", "rx", "ry") == (250, 375, 150, 75)
     assert "transform" not in ltr.attrib
@@ -172,7 +173,7 @@ def test_pieces_sit_on_their_anchor() -> None:
 def test_pieces_turn_and_mirror_in_place() -> None:
     (turned,) = layers(draw(spec([piece(rotate=-90, mirror="inline")])))
     assert turned.attrib["transform"] == (
-        "rotate(90 900 1450) translate(900 1450) scale(-1 1) translate(-900 -1450)"
+        "rotate(-90 900 1450) translate(900 1450) scale(-1 1) translate(-900 -1450)"
     )
 
 
@@ -205,6 +206,42 @@ def test_an_image_has_a_size() -> None:
         Image("data:image/png;base64,", width=0, height=10)
 
 
+@pytest.mark.parametrize(
+    "href",
+    [
+        "https://example.com/flower.png",
+        "file:///etc/passwd",
+        "data:text/html;base64,PGI+",
+        "data:image/png,raw",
+        "data:image/png;base64,AAAA\n",
+        "data:image/png;base64,AA AA",
+    ],
+)
+def test_images_are_only_data_urls(href: str) -> None:
+    with pytest.raises(ValueError, match="data: URL"):
+        Image(href, width=10, height=10)
+
+
+def test_the_direction_is_checked() -> None:
+    with pytest.raises(ValueError, match="direction"):
+        render_svg(spec([band("top")]), "portrait", 100, 150, direction="RTL")  # type: ignore[arg-type]
+
+
+def test_the_window_has_whole_pixel_edges() -> None:
+    frame = read_spec({
+        "specVersion": 1, "aspect": {"portrait": "2:3", "landscape": "3:2"},
+        "window": {"shape": "rectangle",
+                   "portrait": {"inset": {"top": 0.0625, "bottom": 0.0625,
+                                          "start": 0.0333, "end": 0}},
+                   "landscape": {"inset": {"top": 0, "bottom": 0, "start": 0, "end": 0}}},
+        "decoration": {"archetype": "surround", "layers": [band("top")]},
+    })  # fmt: skip
+    cut = ET.fromstring(render_svg(frame, "portrait", 1000, 1500)).find("s:defs/s:mask", NS)
+    assert cut is not None
+    # 93.75 and 1406.25 px from the top, 33.3 px from the right: whole pixels.
+    assert numbers(cut[1], "x", "y", "width", "height") == (0, 94, 967, 1312)
+
+
 def test_a_caption_bar_may_cover_the_photo() -> None:
     # attachments/23.9.26: the window is the whole frame and the bar lies over the photo.
     bar = {"kind": "vector", "shape": "bar", "edge": "bottom", "distance": 0.09,
@@ -218,7 +255,7 @@ def test_the_same_input_gives_the_same_text() -> None:
     frame = spec([band("top"), piece(rotate=12.345678)], shape="rounded", radius=0.123456)
     first = render_svg(frame, "portrait", 1333, 2000, images=IMAGES)
     assert first == render_svg(frame, "portrait", 1333, 2000, images=IMAGES)
-    assert "rotate(-12.346 " in first
+    assert "rotate(12.346 " in first
 
 
 def test_a_missing_piece_image_is_an_error() -> None:
