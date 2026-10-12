@@ -202,3 +202,40 @@ async def start_demo_of_type(settings: Settings, workspace_id: str, job_type: st
         )
     finally:
         await engine.dispose()
+
+
+def test_a_lost_queue_answer_does_not_undo_a_started_job(
+    settings: Settings, workspace_id: str
+) -> None:
+    class StartsThenLosesTheAnswer:
+        """Like a queue whose answer is lost after a worker has already claimed the job."""
+
+        def __init__(self, engine: Any) -> None:
+            self.engine = engine
+
+        def configure_task(self, name: str) -> "StartsThenLosesTheAnswer":
+            return self
+
+        async def defer_async(self, job_id: str, **arguments: Any) -> None:
+            async def work(progress: Progress) -> None:
+                return None
+
+            await run_job(self.engine, job_id, work)  # a worker ran it at once
+            raise ConnectionError("connection lost while answering")
+
+    async def scenario() -> str:
+        engine = async_engine(settings)
+        try:
+            return await start_job(
+                StartsThenLosesTheAnswer(engine),  # type: ignore[arg-type]
+                engine,
+                workspace_id=workspace_id,
+                job_type="demo",
+                arguments={},
+                created_by=None,
+            )
+        finally:
+            await engine.dispose()
+
+    job_id = asyncio.run(scenario())
+    assert job_row(settings, job_id)["status"] == "succeeded"

@@ -39,7 +39,8 @@ async def start_job(
 
     If the queue cannot take it, the job is recorded as failed (queue_unavailable) and
     the error is raised. Should the queue have taken it after all (the answer was lost),
-    the worker skips it, as only queued jobs are run.
+    either the worker skips it (only queued jobs are run) or, when a worker started it
+    first, the job simply goes on and its ID is returned.
     """
     if job_type not in tasks.TASKS:
         raise ValueError(f"no task for job type {job_type!r}")
@@ -59,15 +60,20 @@ async def start_job(
         await app.configure_task(job_type).defer_async(job_id=job_id, **arguments)
     except Exception:
         async with engine.begin() as conn:
-            await conn.execute(
+            marked = await conn.execute(
                 update(jobs)
-                .where(jobs.c.id == job_id)
+                .where(jobs.c.id == job_id, jobs.c.status == "queued")
                 .values(
                     status="failed",
                     error_code="queue_unavailable",
                     error_message="The job could not be queued.",
                     finished_at=datetime.now(UTC),
                 )
+                .returning(jobs.c.id)
             )
+            already_claimed = marked.first() is None
+        if already_claimed:
+            # The queue took it after all and a worker already started it.
+            return job_id
         raise
     return job_id
