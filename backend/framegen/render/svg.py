@@ -14,6 +14,7 @@ Each SVG is meant to be drawn on its own, as a document or an <img>: its mask an
 IDs are fixed, so two inline in one page would share them.
 """
 
+import math
 import re
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
@@ -21,13 +22,23 @@ from typing import Literal
 from xml.sax.saxutils import quoteattr
 
 from framegen.spec import FrameSpec
-from framegen.spec.models import ANCHOR_POINTS, Band, Bar, Layer, Piece, Shape, Stroke, Window
+from framegen.spec.models import (
+    ANCHOR_POINTS,
+    Band,
+    Bar,
+    Layer,
+    Piece,
+    Shape,
+    Stroke,
+    Window,
+    ratio,
+)
 from framegen.spec.text import Orientation
 
 Direction = Literal["rtl", "ltr"]
+"""Reading direction: in right-to-left text (Hebrew), start is the right side."""
 
 IMAGE_HREF = re.compile(r"data:image/(png|jpeg|webp|svg\+xml);base64,[A-Za-z0-9+/]*={0,2}\Z")
-"""Reading direction: in right-to-left text (Hebrew), start is the right side."""
 
 
 @dataclass(frozen=True)
@@ -77,12 +88,15 @@ def render_svg(
         raise ValueError("the size must be at least 1x1 pixels")
     if direction not in ("rtl", "ltr"):
         raise ValueError(f"the direction is 'rtl' or 'ltr', not {direction!r}")
-    if (orientation == "portrait" and width > height) or (
-        orientation == "landscape" and width < height
-    ):
-        raise ValueError(f"a {orientation} frame cannot be {width}x{height} pixels")
+    if orientation not in ("portrait", "landscape"):
+        raise ValueError(f"the orientation is 'portrait' or 'landscape', not {orientation!r}")
+    aspect = getattr(spec.aspect, orientation)
+    if abs(width - height * ratio(aspect)) > 1:
+        raise ValueError(f"{width}x{height} pixels is not the {orientation} aspect {aspect}")
     frame = _Frame(width, height, direction, images or {})
     window = frame.window_rect(spec.window, orientation)
+    if window.width < 1 or window.height < 1:
+        raise ValueError(f"{width}x{height} pixels is too small for the window")
     parts = [
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
         f'viewBox="0 0 {width} {height}">',
@@ -98,6 +112,11 @@ def render_svg(
         "</svg>",
     ]
     return "\n".join(parts) + "\n"
+
+
+def _px(value: float) -> int:
+    """To the nearest whole pixel, halves up (not to even), so both directions agree."""
+    return math.floor(value + 0.5)
 
 
 def _n(value: float) -> str:
@@ -140,8 +159,8 @@ class _Frame:
         inset = getattr(window, orientation).inset
         left, right = (inset.end, inset.start) if self.rtl else (inset.start, inset.end)
         # Whole pixels, so no pixel is half window and half decoration.
-        x0, x1 = round(left * self.width), round((1 - right) * self.width)
-        y0, y1 = round(inset.top * self.height), round((1 - inset.bottom) * self.height)
+        x0, x1 = _px(left * self.width), _px((1 - right) * self.width)
+        y0, y1 = _px(inset.top * self.height), _px((1 - inset.bottom) * self.height)
         return Rect(x0, y0, x1 - x0, y1 - y0)
 
     def window_cut(self, window: Window, rect: Rect) -> Iterator[str]:
@@ -157,7 +176,10 @@ class _Frame:
             # its proportions and centred, so it is the same shape in both orientations.
             yield (
                 '<filter id="alpha-to-black"><feColorMatrix type="matrix" '
-                'values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0"/></filter>'
+                'values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0"/>'
+                # Half or more opaque is window, the rest is not: no pixel is in between.
+                '<feComponentTransfer><feFuncA type="discrete" tableValues="0 1"/>'
+                "</feComponentTransfer></filter>"
             )
             yield (
                 f"<image href={quoteattr(self.image(window.mask).href)} "
@@ -166,7 +188,9 @@ class _Frame:
                 f'filter="url(#alpha-to-black)"/>'
             )
         else:
-            yield self.window_shape(window, rect, 'fill="#000000"')
+            # Crisp edges: each pixel is window or not, so the window has alpha exactly 0
+            # (DESIGN.md 4.4) whatever its shape.
+            yield self.window_shape(window, rect, 'fill="#000000" shape-rendering="crispEdges"')
         yield "</mask>"
 
     def window_shape(self, window: Window, rect: Rect, paint: str, grow: float = 0) -> str:
@@ -222,7 +246,9 @@ class _Frame:
 
     def strip(self, layer: Band | Bar, distance: float, thickness: float) -> str:
         across = self.height if layer.edge in ("top", "bottom") else self.width
-        near, size = distance * across, thickness * across
+        # Whole pixels, like the window, so a band meeting it leaves no half-covered seam.
+        near = _px(distance * across)
+        size = _px((distance + thickness) * across) - near
         side: str = layer.edge
         if side in ("start", "end"):
             side = "right" if (side == "start") == self.rtl else "left"

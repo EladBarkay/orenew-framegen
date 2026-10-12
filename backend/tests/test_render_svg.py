@@ -197,8 +197,57 @@ def test_a_rotated_layer_keeps_the_cut_in_place() -> None:
 @pytest.mark.parametrize(("orientation", "size"), [("portrait", (1500, 1000)),
                                                    ("landscape", (1000, 1500))])  # fmt: skip
 def test_the_size_must_fit_the_orientation(orientation: str, size: tuple[int, int]) -> None:
-    with pytest.raises(ValueError, match="cannot be"):
+    with pytest.raises(ValueError, match="is not the"):
         render_svg(spec([band("top")]), orientation, *size)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("size", [(1000, 1000), (1000, 3000), (1000, 1502)])
+def test_the_size_must_have_the_spec_aspect(size: tuple[int, int]) -> None:
+    with pytest.raises(ValueError, match="aspect 2:3"):
+        render_svg(spec([band("top")]), "portrait", *size)
+
+
+def test_a_size_one_pixel_off_the_aspect_is_fine() -> None:
+    assert render_svg(spec([band("top")]), "portrait", 1001, 1500)
+
+
+def test_the_orientation_is_checked() -> None:
+    with pytest.raises(ValueError, match="orientation"):
+        render_svg(spec([band("top")]), "Portrait", 1000, 1500)  # type: ignore[arg-type]
+
+
+def test_a_size_too_small_for_the_window_is_an_error() -> None:
+    narrow = {"top": 0, "bottom": 0, "start": 0.4, "end": 0.4}
+    frame = spec([band("top")])
+    frame = frame.model_copy(update={"window": frame.window.model_copy(update={
+        "portrait": frame.window.portrait.model_copy(update={
+            "inset": frame.window.portrait.inset.model_copy(update=narrow)})})})  # fmt: skip
+    with pytest.raises(ValueError, match="too small"):
+        render_svg(frame, "portrait", 2, 3)
+
+
+def test_the_window_cut_has_no_partial_pixels() -> None:
+    oval = draw(spec([band("top")], shape="oval")).find("s:defs/s:mask/s:ellipse", NS)
+    assert oval is not None and oval.attrib["shape-rendering"] == "crispEdges"
+    masked = render_svg(spec([band("top")], shape="mask", mask=MASK), "portrait", 1000, 1500,
+                        images=IMAGES)  # fmt: skip
+    assert '<feFuncA type="discrete" tableValues="0 1"/>' in masked
+
+
+def test_a_band_meets_the_window_on_a_whole_pixel() -> None:
+    inset = {"top": 0.1, "bottom": 0, "start": 0, "end": 0}
+    frame = read_spec({
+        "specVersion": 1, "aspect": {"portrait": "2:3", "landscape": "3:2"},
+        "window": {"shape": "rectangle", "portrait": {"inset": inset},
+                   "landscape": {"inset": inset}},
+        "decoration": {"archetype": "bar", "layers": [band("top", 0.1)]},
+    })  # fmt: skip
+    root = ET.fromstring(render_svg(frame, "portrait", 1010, 1515))
+    window = root.find("s:defs/s:mask", NS)
+    assert window is not None
+    (top,) = layers(root)
+    # 151.5 px both: the band ends where the window starts, at 152.
+    assert numbers(top, "height") == numbers(window[1], "y") == (152,)
 
 
 def test_an_image_has_a_size() -> None:
