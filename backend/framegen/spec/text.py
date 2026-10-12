@@ -80,12 +80,15 @@ def _no_control(value: object) -> object:
     return value
 
 
-_FILLERS = {"\u115f", "\u1160", "\u3164", "\uffa0"}
-"""Hangul fillers: letters by category, but they draw nothing."""
+_BLANKS = {"\u115f", "\u1160", "\u3164", "\uffa0", "\u2800"}
+"""Hangul fillers and the Braille blank: letters or symbols by category, but they draw
+nothing."""
 
 
 def _visible(char: str) -> bool:
-    return not (char.isspace() or unicodedata.category(char) == "Cf" or char in _FILLERS)
+    # A letter, digit, punctuation mark or symbol; marks, spaces and format characters
+    # draw nothing on their own.
+    return unicodedata.category(char)[0] in "LNPS" and char not in _BLANKS
 
 
 def _not_blank(value: object) -> object:
@@ -95,7 +98,7 @@ def _not_blank(value: object) -> object:
 
 
 Text = Annotated[
-    str, BeforeValidator(_not_blank), BeforeValidator(_no_control), Field(max_length=200)
+    str, Field(max_length=200), BeforeValidator(_not_blank), BeforeValidator(_no_control)
 ]
 
 
@@ -194,16 +197,21 @@ class Date(TextStyle):
     value: Annotated[
         datetime.date,
         BeforeValidator(_iso_date),
-        Field(json_schema_extra={"type": "string", "format": "date"}),
+        Field(
+            json_schema_extra={
+                "type": "string",
+                "format": "date",
+                "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+            }
+        ),
     ]
     after_sunset: bool = Field(
         default=False,
         description="The event is in the evening, so its Hebrew date is the next day's.",
     )
     formats: list[DateFormat] = Field(min_length=1, max_length=3)
-    joiner: Annotated[str, BeforeValidator(_no_control)] | None = Field(
+    joiner: Annotated[str, Field(max_length=10), BeforeValidator(_no_control)] | None = Field(
         default=" · ",
-        max_length=10,
         description="Between formats on one line; null stacks them on separate lines.",
     )
     override: Text | None = Field(

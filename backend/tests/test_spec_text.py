@@ -138,7 +138,7 @@ BASE = ATTACHMENTS["23.9.26 wedding, bar with icons"]
     [
         ({"headline": headline("   ")}, "spec_text_empty"),
         ({"headline": headline("a\x00b")}, "spec_text_control"),
-        ({"headline": headline("א" * 201)}, "too_long"),
+        ({"headline": headline("א" * 201)}, "string_too_long"),
         ({"headline": {**headline(), "font": "../fonts/x.ttf"}}, "string_pattern_mismatch"),
         ({"headline": {**headline(), "size": 0.3}}, "less_than_equal"),
         ({"headline": headline(slot="middle")}, "literal_error"),
@@ -166,6 +166,8 @@ BASE = ATTACHMENTS["23.9.26 wedding, bar with icons"]
         ({"headline": headline("a\u206eb")}, "spec_text_control"),
         ({"headline": headline("a\ufff9b")}, "spec_text_control"),
         ({"headline": headline("\u200f\u200b\u00ad\u3164")}, "spec_text_empty"),
+        ({"headline": headline("\ufe0f\u034f\u2800")}, "spec_text_empty"),
+        ({"date": date(joiner=" " * 11)}, "string_too_long"),
         ({"date": date(value="\uff12\uff10\uff12\uff16-10-12")}, "date_type"),
         ({"date": date(value="1899-12-31")}, "spec_date_range"),
         ({"date": date(value="9999-12-31", afterSunset=True)}, "spec_date_range"),
