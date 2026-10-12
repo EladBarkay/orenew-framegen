@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Signs up, starts a demo job and polls it until it ends, all through the public entrance
-# (Caddy); checks that the worker ran it. Usage: deploy/smoke-job.sh <site-url>
+# Signs up, starts a demo job, follows its event stream and then polls it, all through the
+# public entrance (Caddy); checks that the worker ran it. Usage: deploy/smoke-job.sh <site-url>
 set -euo pipefail
 site=${1:?usage: smoke-job.sh <site-url>}
 cookies=$(mktemp)
@@ -15,6 +15,12 @@ api POST /v1/auth/signup \
   "{\"email\":\"smoke-$RANDOM$RANDOM@example.com\",\"password\":\"smoke test password\",\"name\":\"Smoke\"}" >/dev/null
 workspace=$(api GET /v1/workspaces | jq -r '.items[0].id')
 job=$(api POST "/v1/workspaces/$workspace/jobs/demo" '{"steps":3}' | jq -r '.id')
+
+# Follow it as it happens: the stream must reach the end of the job through Caddy.
+last=$(curl --fail --silent --show-error --no-buffer --max-time 60 -b "$cookies" \
+  "$site/v1/workspaces/$workspace/jobs/$job/events" | grep '^data: ' | tail -n 1)
+[[ $(jq -r '.status' <<<"${last#data: }") == succeeded ]] \
+  || { echo "event stream did not end with success: $last"; exit 1; }
 
 for _ in $(seq 60); do
   status=$(api GET "/v1/workspaces/$workspace/jobs/$job" | jq -r '.status')

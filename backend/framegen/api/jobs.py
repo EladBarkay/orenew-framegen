@@ -2,14 +2,17 @@
 
 A route that starts long work answers ``202 Accepted`` with the job and a ``Location``
 header. The client then follows the job with ``getJob`` until its status is
-``succeeded`` (the ``result`` is there) or ``failed`` (the ``error`` says why). The
-progress stream (``/events``) comes with T-08c.
+``succeeded`` (the ``result`` is there) or ``failed`` (the ``error`` says why), or
+reads ``getJobEvents``, a stream of server-sent events that ends with the job.
 """
 
+import time
+from collections.abc import AsyncIterator
 from datetime import datetime
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Path, Request, Response, status
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -113,3 +116,57 @@ async def start_demo_job(
 async def get_job(job_id: JobId, access: MemberAccess, engine: Engine) -> Job:
     """A job's status, progress, and its result or error once it has ended."""
     return await find_job(engine, access.workspace_id, job_id)
+
+
+FINISHED = {"succeeded", "failed"}
+RECHECK_SECONDS = 2.0
+"""A stream re-reads its job at least this often, in case a notification was missed."""
+KEEP_ALIVE_SECONDS = 15.0
+"""A comment line this often keeps proxies from closing a quiet stream."""
+
+
+@router.get(
+    "/v1/workspaces/{workspace_id}/jobs/{job_id}/events",
+    operation_id="getJobEvents",
+    response_class=StreamingResponse,
+    responses={
+        200: {
+            "description": (
+                "Server-sent events. Each `job` event carries the job (as getJob returns "
+                "it): first its current state, then each change. The stream ends after the "
+                "job has succeeded or failed. Lines starting with ':' only keep the "
+                "connection alive."
+            ),
+            "content": {"text/event-stream": {"schema": {"type": "string"}}},
+        }
+    },
+)
+async def get_job_events(
+    job_id: JobId, access: MemberAccess, engine: Engine, request: Request
+) -> StreamingResponse:
+    """Follow a job as it happens."""
+    first = await find_job(engine, access.workspace_id, job_id)
+    events = request.app.state.job_events
+
+    async def stream() -> AsyncIterator[str]:
+        job, sent = first, ""
+        quiet_since = time.monotonic()
+        while True:
+            data = job.model_dump_json()
+            if data != sent:
+                yield f"event: job\ndata: {data}\n\n"
+                sent, quiet_since = data, time.monotonic()
+            elif time.monotonic() - quiet_since >= KEEP_ALIVE_SECONDS:
+                yield ": keep-alive\n\n"
+                quiet_since = time.monotonic()
+            if job.status in FINISHED:
+                return
+            await events.wait(job_id, RECHECK_SECONDS)
+            job = await find_job(engine, access.workspace_id, job_id)
+
+    return StreamingResponse(
+        stream(),
+        media_type="text/event-stream",
+        # No caching, and no buffering in proxies: each event goes out at once.
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
