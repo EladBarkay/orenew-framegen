@@ -49,14 +49,14 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --locked
-      - name: Chromium for the renderer tests (the version Playwright is pinned to)
-        run: uv run playwright install --with-deps --only-shell chromium
       - name: Lint
         run: uv run ruff check .
       - name: Format
         run: uv run ruff format --check .
       - name: Type check
         run: uv run mypy
+      - name: Chromium for the renderer tests (the version Playwright is pinned to)
+        run: uv run playwright install --with-deps --only-shell chromium
       - name: Tests (including the Postgres, storage and Chromium ones)
         run: uv run pytest
         env:

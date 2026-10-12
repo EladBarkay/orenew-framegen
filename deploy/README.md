@@ -92,7 +92,8 @@ Pass it with a Compose override file of your own, for example:
 ```yaml
 # compose.proxy.yaml (keep it out of the repository)
 x-proxy-build: &proxy-build
-  args: { HTTPS_PROXY: http://proxy.example:3128 }
+  # Both: the worker's system packages are fetched over plain HTTP.
+  args: { HTTP_PROXY: http://proxy.example:3128, HTTPS_PROXY: http://proxy.example:3128 }
   secrets: [build_ca]
 services:
   api: { build: *proxy-build } # builds the backend image; storage-init and migrate reuse it

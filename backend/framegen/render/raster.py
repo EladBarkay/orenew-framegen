@@ -13,6 +13,9 @@ from playwright.async_api import Browser, Playwright, Route, async_playwright
 MAX_SIDE = 16384
 """Chromium's largest screenshot side. Print sizes at 300 dpi stay well under it."""
 
+TIMEOUT_MS = 120_000
+"""For loading and drawing one frame: the largest take tens of seconds."""
+
 LAUNCH_ARGS = [
     # The same pixels on every machine: no GPU, a fixed colour profile, no LCD
     # subpixel text and no hinting (text comes with T-13).
@@ -48,10 +51,12 @@ class Rasteriser:
         error: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
-        if self._browser is not None:
-            await self._browser.close()
-        if self._playwright is not None:
-            await self._playwright.stop()
+        try:
+            if self._browser is not None:
+                await self._browser.close()
+        finally:
+            if self._playwright is not None:
+                await self._playwright.stop()
 
     async def png(self, svg: str, width: int, height: int) -> bytes:
         """The SVG drawn at exactly width x height pixels, with a transparent background,
@@ -64,9 +69,12 @@ class Rasteriser:
             viewport={"width": width, "height": height},
             device_scale_factor=1,
             offline=True,
+            # Nothing on the page needs scripts; text from people will be on it (T-13).
+            java_script_enabled=False,
         )
         try:
             page = await context.new_page()
+            page.set_default_timeout(TIMEOUT_MS)
             await page.route("**/*", _refuse)
             await page.set_content(
                 "<!doctype html><html><head><style>html,body{margin:0;background:transparent}"
