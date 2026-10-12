@@ -1,5 +1,6 @@
-"""Shared fixtures. Tests that need Postgres run with FRAMEGEN_TEST_POSTGRES=1, and those
-that also need the S3 storage with FRAMEGEN_TEST_STORAGE=1 (CI sets both).
+"""Shared fixtures. Tests that need Postgres run with FRAMEGEN_TEST_POSTGRES=1, those
+that also need the S3 storage with FRAMEGEN_TEST_STORAGE=1, and the renderer's with
+FRAMEGEN_TEST_CHROMIUM=1 (CI sets all three).
 
 They use their own database (framegen_test) and bucket (framegen-test), created fresh for
 each run, so a developer's data is never touched.
