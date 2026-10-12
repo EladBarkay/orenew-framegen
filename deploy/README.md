@@ -56,9 +56,14 @@ FRAMEGEN_POSTGRES_PORT=15432
 | `FRAMEGEN_STORAGE_PORT` | 9000 | `storage` |
 
 Inside Compose the services do not use these ports. The backend run directly on your
-machine (as in the main README) does: give it the same ports with `FRAMEGEN_DB_PORT`
-and with `FRAMEGEN_S3_ENDPOINT_URL` and `FRAMEGEN_S3_PUBLIC_URL`
-(`http://localhost:<storage port>`).
+machine (as in the main README) does, and it does not read `deploy/.env`: export the
+same ports in the shell you run it from, before any `uv run` (tests included, which
+would otherwise create their database on whatever answers at 5432):
+
+```sh
+export FRAMEGEN_DB_PORT=15432
+export FRAMEGEN_S3_ENDPOINT_URL=http://localhost:19000 FRAMEGEN_S3_PUBLIC_URL=http://localhost:19000
+```
 
 Files are uploaded and downloaded straight to and from the storage with pre-signed links
 (`DESIGN.md` section 6.2). The links point at the site itself (`FRAMEGEN_PUBLIC_URL`,

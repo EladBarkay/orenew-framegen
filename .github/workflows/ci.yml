@@ -111,16 +111,16 @@ jobs:
           docker compose -f deploy/compose.yaml exec -T api python -c \
             "import urllib.request; print(urllib.request.urlopen('http://localhost:8000/internal/health/ready').read().decode())"
           # Through the public entrance: the web app and the API.
-          curl --fail --silent --show-error --output /dev/null http://localhost:8081/
-          curl --fail --silent --show-error http://localhost:8081/v1/health
+          curl --fail --silent --show-error --output /dev/null http://localhost:$FRAMEGEN_WEB_PORT/
+          curl --fail --silent --show-error http://localhost:$FRAMEGEN_WEB_PORT/v1/health
           # Readiness must not be reachable from outside.
-          if curl --silent http://localhost:8081/internal/health/ready | grep -q '"checks"'; then
+          if curl --silent http://localhost:$FRAMEGEN_WEB_PORT/internal/health/ready | grep -q '"checks"'; then
             echo "::error::readiness is reachable through the public entrance"; exit 1
           fi
       - name: Upload and download a file through the public entrance
-        run: deploy/smoke-upload.sh http://localhost:8081
+        run: deploy/smoke-upload.sh http://localhost:$FRAMEGEN_WEB_PORT
       - name: Start a demo job and follow it to the end through the public entrance
-        run: deploy/smoke-job.sh http://localhost:8081
+        run: deploy/smoke-job.sh http://localhost:$FRAMEGEN_WEB_PORT
       - name: Logs
         if: failure()
         run: docker compose -f deploy/compose.yaml logs
