@@ -3,7 +3,7 @@
   import { onMount } from "svelte";
 
   import { apiState, type ApiState } from "#lib/health.ts";
-  import { parts, t } from "#lib/i18n.ts";
+  import { parts, t } from "#lib/i18n.svelte.ts";
   import { SOURCE_URL } from "#lib/project.ts";
 
   // Placeholder home page: proves the web app reaches the API through the SDK.
@@ -37,8 +37,8 @@
 
 <footer>
   {#each parts("footer.licence") as part, index (index)}
-    {#if "text" in part}{part.text}{:else}<a href="https://www.gnu.org/licenses/agpl-3.0.html"
-        >{t("footer.licence_name")}</a
+    {#if "text" in part}{part.text}{:else if part.slot === "licence"}<a
+        href="https://www.gnu.org/licenses/agpl-3.0.html">{t("footer.licence_name")}</a
       >{/if}
   {/each}
   <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- external link -->

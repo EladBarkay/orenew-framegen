@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { parts, t } from "./i18n.ts";
+import { parts, t } from "./i18n.svelte.ts";
 
 describe("t", () => {
   it("fills placeholders", () => {

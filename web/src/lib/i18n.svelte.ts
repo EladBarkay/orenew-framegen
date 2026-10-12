@@ -13,7 +13,8 @@ type Messages = Record<MessageKey, string>;
 export const LANGUAGES = { en: { messages: en as Messages, direction: "ltr" } } as const;
 export type Language = keyof typeof LANGUAGES;
 
-let current: Language = "en";
+// Reactive, so everything shown with t() or parts() changes when the language does.
+let current: Language = $state("en");
 
 export function setLanguage(language: Language): void {
   current = language;
@@ -24,7 +25,7 @@ export function setLanguage(language: Language): void {
 /** The message for `key`, with its `{name}` placeholders filled from `values`. */
 export function t(key: MessageKey, values: Record<string, string | number> = {}): string {
   return LANGUAGES[current].messages[key].replace(/\{(\w+)\}/g, (whole, name: string) =>
-    name in values ? String(values[name]) : whole,
+    Object.hasOwn(values, name) ? String(values[name]) : whole,
   );
 }
 

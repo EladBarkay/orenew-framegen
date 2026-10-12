@@ -9,6 +9,7 @@ import { join, relative } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { markupText, physicalProperties, placeholders } from "./checks.ts";
 import en from "./en.json";
 
 const SRC = join(import.meta.dirname, "..");
@@ -37,36 +38,19 @@ describe("locale keys", () => {
     expect(Object.keys(en).filter((key) => !code.includes(`"${key}"`))).toEqual([]);
   });
 
-  it("every language has the same keys as English", () => {
+  it("every language has the same keys and placeholders as English", () => {
     for (const file of readdirSync(LOCALES).filter((name) => name.endsWith(".json"))) {
-      const messages = JSON.parse(readFileSync(join(LOCALES, file), "utf8")) as object;
+      const messages = JSON.parse(readFileSync(join(LOCALES, file), "utf8")) as Record<
+        string,
+        string
+      >;
       expect(Object.keys(messages).sort(), file).toEqual(Object.keys(en).sort());
+      for (const [key, english] of Object.entries(en)) {
+        expect(placeholders(messages[key] ?? ""), `${file} ${key}`).toEqual(placeholders(english));
+      }
     }
   });
 });
-
-/** The markup of a component, without scripts, styles, comments and {expressions}. */
-export function markupText(source: string): { text: string; attributes: string[] } {
-  let markup = source
-    .replace(/<script[\s\S]*?<\/script>/g, "")
-    .replace(/<style[\s\S]*?<\/style>/g, "")
-    .replace(/<!--[\s\S]*?-->/g, "");
-  let withoutExpressions = "";
-  let depth = 0;
-  for (const char of markup) {
-    if (char === "{") depth += 1;
-    else if (char === "}") depth = Math.max(0, depth - 1);
-    else if (depth === 0) withoutExpressions += char;
-  }
-  markup = withoutExpressions;
-  const attributes = [
-    ...markup.matchAll(/\s(?:title|alt|placeholder|aria-label|label)\s*=\s*"([^"]*)"/g),
-  ]
-    .map((match) => match[1]!)
-    .filter((value) => /\p{L}/u.test(value));
-  const text = markup.replace(/<[^>]*>/g, " ").replace(/&\w+;/g, " ");
-  return { text: text.replace(/[^\p{L}]+/gu, " ").trim(), attributes };
-}
 
 describe("components", () => {
   it.each(components.map((path) => [relative(SRC, path), path]))(
@@ -81,6 +65,10 @@ describe("components", () => {
       text: "Hello",
       attributes: ["A cat"],
     });
+    expect(markupText("<img alt='A dog' title=Hi /><input value=\"Send\" />")).toEqual({
+      text: "",
+      attributes: ["A dog", "Hi", "Send"],
+    });
     expect(markupText('<p>{t("x")}</p><img alt={t("y")} />')).toEqual({
       text: "",
       attributes: [],
@@ -88,28 +76,34 @@ describe("components", () => {
   });
 });
 
-const PHYSICAL =
-  /\b(?:(?:margin|padding|border|inset)-(?:left|right|top|bottom)|left|right|top|bottom)\s*:|\b(?:text-align|float|clear)\s*:\s*(?:left|right)\b/g;
-
-/** Physical CSS properties in the styles of `source`. */
-export function physicalProperties(source: string): string[] {
-  const styles = [...source.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)].map((m) => m[1]);
-  const css = source.includes("<style") ? styles.join("\n") : source;
-  return [...css.matchAll(PHYSICAL)].map((match) => match[0]);
-}
-
 describe("styles", () => {
   const styled = files(SRC).filter((path) => /\.(svelte|css)$/.test(path));
 
   it.each(styled.map((path) => [relative(SRC, path), path]))(
     "%s uses logical properties only",
     (_, path) => {
-      expect(physicalProperties(readFileSync(path, "utf8"))).toEqual([]);
+      const source = readFileSync(path, "utf8");
+      expect(physicalProperties(source, path.endsWith(".svelte"))).toEqual([]);
     },
   );
 
-  it("finds physical properties", () => {
-    const css = "<style>a { margin-left: 1px; text-align: right; top: 0; inset-inline: 0 }</style>";
-    expect(physicalProperties(css)).toEqual(["margin-left:", "text-align: right", "top:"]);
+  it("finds physical properties, and only properties", () => {
+    const component = [
+      "<script>const at = { top: 1 };</script>",
+      '<p style="padding-right: 2px" style:margin-left={x}></p>',
+      "<style>.top:hover { margin-left: 1px; border-left-width: 1px;",
+      "  border-top-left-radius: 2px; text-align: right; inset-inline: 0 }</style>",
+    ].join("\n");
+    expect(physicalProperties(component)).toEqual([
+      "margin-left",
+      "border-left-width",
+      "border-top-left-radius",
+      "text-align: right",
+      "padding-right",
+      "margin-left",
+    ]);
+    expect(physicalProperties(".a { float: left; margin-inline: 0 }", false)).toEqual([
+      "float: left",
+    ]);
   });
 });
