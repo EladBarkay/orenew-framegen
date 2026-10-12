@@ -8,6 +8,8 @@ from framegen.spec import FrameSpec, SpecInvalid, read_spec
 from framegen.spec import schema as spec_schema
 from framegen.spec.models import Bar, Piece, Stroke
 
+PIECE = "pc_" + "a2" * 13
+MASK = "ast_" + "b3" * 13
 SCHEMA_FILE = Path(__file__).parents[2] / "schemas" / "frame-spec.schema.json"
 
 
@@ -48,7 +50,7 @@ def example() -> dict[str, Any]:
                 },
                 {
                     "kind": "piece",
-                    "piece": "pc_bottle",
+                    "piece": PIECE,
                     "anchor": "bottom-start",
                     "size": 0.1,
                     "offset": {"x": 0.03, "y": -0.07},
@@ -102,9 +104,7 @@ def test_python_names_are_not_accepted_in_json() -> None:
 
 def test_unknown_fields_are_rejected() -> None:
     data = with_change(["decoration", "layers", 0, "colour"], "#ffffff")
-    assert problems(data) == [
-        (("decoration", "layers", 0, "vector", "bar", "colour"), "extra_forbidden")
-    ]
+    assert problems(data) == [(("decoration", "layers", 0, "colour"), "extra_forbidden")]
 
 
 def test_every_problem_is_reported_at_once() -> None:
@@ -169,11 +169,11 @@ def test_rounded_and_mask_windows_take_their_setting() -> None:
     rounded["window"]["radius"] = 0.05
     assert read_spec(rounded).window.radius == 0.05
     rounded["window"]["radius"] = 0.6
-    assert {code for _, code in problems(rounded)} == {"spec_window_radius"}
+    assert problems(rounded) == [(("window", "radius"), "less_than_equal")]
 
     mask = with_change(["window", "shape"], "mask")
-    mask["window"]["mask"] = "ast_01HXYZ"
-    assert read_spec(mask).window.mask == "ast_01HXYZ"
+    mask["window"]["mask"] = MASK
+    assert read_spec(mask).window.mask == MASK
 
 
 def test_a_spec_is_immutable() -> None:
@@ -195,3 +195,44 @@ def test_the_json_schema_describes_the_spec() -> None:
     assert set(schema["required"]) == {"specVersion", "aspect", "window", "decoration"}
     assert schema["additionalProperties"] is False
     assert "overlapsWindow" in schema["$defs"]["Piece"]["properties"]
+
+
+def test_a_window_of_exactly_the_minimum_is_allowed() -> None:
+    for top, bottom in [(0, 0.8), (0.1, 0.7), (0.4, 0.4)]:
+        data = with_change(
+            ["window", "portrait", "inset"], {"top": top, "bottom": bottom, "start": 0, "end": 0}
+        )
+        assert read_spec(data)
+
+
+@pytest.mark.parametrize(
+    ("path", "value"),
+    [
+        (["decoration", "layers", 1, "opacity"], "0.5"),
+        (["decoration", "layers", 1, "opacity"], True),
+        (["decoration", "layers", 3, "overlapsWindow"], "yes"),
+    ],
+)
+def test_values_are_not_coerced(path: list[str | int], value: Any) -> None:
+    assert problems(with_change(path, value))
+
+
+def test_problem_locations_are_paths_into_the_json() -> None:
+    data = example()
+    del data["decoration"]["layers"][2]["box"]["width"]
+    data["decoration"]["layers"][3]["mirror"] = "both"
+    found = problems(data)
+    assert (("decoration", "layers", 2, "box", "width"), "missing") in found
+    assert (("decoration", "layers", 3, "mirror"), "literal_error") in found
+    mask = with_change(["window", "shape"], "mask")
+    mask["window"]["mask"] = "ast_x"
+    assert problems(mask) == [(("window", "mask"), "string_pattern_mismatch")]
+    for location, _ in found:
+        node: Any = data
+        for step in location[:-1]:
+            node = node[step]
+
+
+def test_ids_have_the_real_format() -> None:
+    for value in ["pc_bottle", "pc_" + "a" * 27, "pc_" + "A2" * 13, PIECE + "\n"]:
+        assert problems(with_change(["decoration", "layers", 3, "piece"], value))

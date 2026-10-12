@@ -30,7 +30,35 @@ def read_spec(data: Any) -> FrameSpec:
     except ValidationError as error:
         raise SpecInvalid(
             [
-                Problem(location=tuple(item["loc"]), code=item["type"], message=item["msg"])
+                Problem(
+                    location=_json_path(data, item["loc"]),
+                    code=item["type"],
+                    message=item["msg"],
+                )
                 for item in error.errors(include_url=False)
             ]
         ) from error
+
+
+def _json_path(data: Any, location: tuple[str | int, ...]) -> tuple[str | int, ...]:
+    """Pydantic's location as a path into the submitted JSON: a discriminated union adds
+    its tag values as steps (``layers, 0, "vector", "bar", "colour"``), which are dropped."""
+    path: list[str | int] = []
+    node = data
+    tags: list[object] = []
+    for step in location:
+        if isinstance(node, dict):
+            if step in tags:  # checked first: a piece's tag "piece" is also a field name
+                tags.remove(step)
+                continue
+            node = node.get(step) if isinstance(step, str) else None
+        elif isinstance(node, list) and isinstance(step, int) and 0 <= step < len(node):
+            node = node[step]
+        else:
+            node = None
+        path.append(step)
+        # Only decoration layers are union members, and they always have a kind.
+        tags = (
+            [node["kind"], node.get("shape")] if isinstance(node, dict) and "kind" in node else []
+        )
+    return tuple(path)

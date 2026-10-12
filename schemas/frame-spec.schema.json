@@ -391,7 +391,7 @@
           "type": "boolean"
         },
         "piece": {
-          "pattern": "^pc_[0-9A-Za-z]+$",
+          "pattern": "^pc_[a-z2-7]{26}$",
           "title": "Piece",
           "type": "string"
         },
@@ -545,7 +545,7 @@
         "mask": {
           "anyOf": [
             {
-              "pattern": "^ast_[0-9A-Za-z]+$",
+              "pattern": "^ast_[a-z2-7]{26}$",
               "type": "string"
             },
             {
@@ -562,7 +562,7 @@
         "radius": {
           "anyOf": [
             {
-              "maximum": 1,
+              "maximum": 0.5,
               "minimum": 0,
               "type": "number"
             },
@@ -611,7 +611,7 @@
   "$id": "https://github.com/EladBarkay/orenew-framegen/schemas/frame-spec.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "One frame design. Headline, date and stamp are added in T-11b.",
+  "description": "One frame design. This schema checks each field. FrameGen also checks rules across fields that it cannot express (the window keeps at least 20% of the frame, shapes stay inside the frame, portrait is not wider than tall, a radius only for 'rounded' and a mask only for 'mask').",
   "properties": {
     "aspect": {
       "$ref": "#/$defs/Aspect"

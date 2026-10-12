@@ -15,6 +15,12 @@ def render() -> str:
         "$id": SCHEMA_ID,
         **FrameSpec.model_json_schema(by_alias=True, mode="validation"),
     }
+    schema["description"] = (
+        f"{schema['description']} This schema checks each field. FrameGen also checks "
+        "rules across fields that it cannot express (the window keeps at least 20% of "
+        "the frame, shapes stay inside the frame, portrait is not wider than tall, a "
+        "radius only for 'rounded' and a mask only for 'mask')."
+    )
     return json.dumps(schema, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
 
 

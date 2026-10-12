@@ -16,15 +16,28 @@ SPEC_VERSION = 1
 MIN_WINDOW = 0.2
 """The window is at least this fraction of the frame's width and of its height."""
 
+TOLERANCE = 1e-9
+"""Sums of fractions are compared with this slack, so 1 - 0.8 counts as 0.2."""
+
 
 class SpecModel(BaseModel):
     model_config = ConfigDict(
-        alias_generator=to_camel, populate_by_name=True, extra="forbid", frozen=True
+        alias_generator=to_camel,
+        populate_by_name=True,
+        extra="forbid",
+        frozen=True,
+        # No coercion: "0.5" or true is not a number, as in the JSON Schema.
+        strict=True,
     )
 
 
 Fraction = Annotated[float, Field(ge=0, le=1, allow_inf_nan=False)]
-"""A share of the frame: 0 is nothing, 1 is all of it."""
+"""A share of the frame: 0 is nothing, 1 is all of it. Also used for opacity."""
+
+PositiveFraction = Annotated[float, Field(gt=0, le=1, allow_inf_nan=False)]
+
+Rotation = Annotated[float, Field(ge=-180, le=180, allow_inf_nan=False)]
+"""Degrees, clockwise."""
 
 Color = Annotated[
     str,
@@ -72,7 +85,8 @@ class Insets(SpecModel):
 
     @model_validator(mode="after")
     def _room_for_window(self) -> Self:
-        if 1 - self.top - self.bottom < MIN_WINDOW or 1 - self.start - self.end < MIN_WINDOW:
+        limit = MIN_WINDOW - TOLERANCE
+        if 1 - self.top - self.bottom < limit or 1 - self.start - self.end < limit:
             raise PydanticCustomError(
                 "spec_window_too_small",
                 "The insets leave the window less than {minimum} of the frame.",
@@ -90,12 +104,12 @@ class Window(SpecModel):
     transparent (alpha 0) except where a layer is allowed to overlap it."""
 
     shape: Literal["rectangle", "rounded", "arch", "oval", "mask"]
-    radius: Fraction | None = Field(
+    radius: Annotated[float, Field(ge=0, le=0.5, allow_inf_nan=False)] | None = Field(
         default=None, description="Corner radius for 'rounded', as a share of the shorter side."
     )
     mask: str | None = Field(
         default=None,
-        pattern=r"^ast_[0-9A-Za-z]+$",
+        pattern=r"^ast_[a-z2-7]{26}$",
         description="For 'mask': the asset whose alpha is the window's shape.",
     )
     portrait: WindowPlacement
@@ -106,10 +120,6 @@ class Window(SpecModel):
         if (self.radius is not None) != (self.shape == "rounded"):
             raise PydanticCustomError(
                 "spec_window_radius", "A radius is required for 'rounded', and only there."
-            )
-        if self.radius is not None and self.radius > 0.5:
-            raise PydanticCustomError(
-                "spec_window_radius", "The radius is at most half the shorter side."
             )
         if (self.mask is not None) != (self.shape == "mask"):
             raise PydanticCustomError(
@@ -122,7 +132,6 @@ Edge = Literal["top", "bottom", "start", "end"]
 Anchor = Literal[
     "top-start", "top", "top-end", "start", "center", "end", "bottom-start", "bottom", "bottom-end"
 ]
-Opacity = Annotated[float, Field(ge=0, le=1, allow_inf_nan=False)]
 Thickness = Annotated[float, Field(gt=0, le=0.5, allow_inf_nan=False)]
 
 
@@ -135,7 +144,7 @@ class Stroke(SpecModel):
     width: Annotated[float, Field(gt=0, le=0.1, allow_inf_nan=False)]
     offset: Fraction = Field(default=0, description="Gap between the line and what it surrounds.")
     color: Color
-    opacity: Opacity = 1
+    opacity: Fraction = 1
 
 
 class Band(SpecModel):
@@ -146,7 +155,7 @@ class Band(SpecModel):
     edge: Edge
     thickness: Thickness
     color: Color
-    opacity: Opacity = 1
+    opacity: Fraction = 1
 
 
 class Bar(SpecModel):
@@ -159,11 +168,11 @@ class Bar(SpecModel):
     distance: Fraction = Field(description="From the edge to the bar's near side.")
     thickness: Thickness
     color: Color
-    opacity: Opacity = 1
+    opacity: Fraction = 1
 
     @model_validator(mode="after")
     def _inside(self) -> Self:
-        if self.distance + self.thickness > 1:
+        if self.distance + self.thickness > 1 + TOLERANCE:
             raise PydanticCustomError("spec_outside_frame", "The bar ends outside the frame.")
         return self
 
@@ -173,12 +182,12 @@ class Box(SpecModel):
 
     x: Fraction
     y: Fraction
-    width: Annotated[float, Field(gt=0, le=1, allow_inf_nan=False)]
-    height: Annotated[float, Field(gt=0, le=1, allow_inf_nan=False)]
+    width: PositiveFraction
+    height: PositiveFraction
 
     @model_validator(mode="after")
     def _inside(self) -> Self:
-        if self.x + self.width > 1 or self.y + self.height > 1:
+        if self.x + self.width > 1 + TOLERANCE or self.y + self.height > 1 + TOLERANCE:
             raise PydanticCustomError("spec_outside_frame", "The box ends outside the frame.")
         return self
 
@@ -189,9 +198,9 @@ class Shape(SpecModel):
     kind: Literal["vector"]
     shape: Literal["rectangle", "ellipse"]
     box: Box
-    rotate: Annotated[float, Field(ge=-180, le=180, allow_inf_nan=False)] = 0
+    rotate: Rotation = 0
     color: Color
-    opacity: Opacity = 1
+    opacity: Fraction = 1
 
 
 class Offset(SpecModel):
@@ -203,19 +212,14 @@ class Piece(SpecModel):
     """A raster artwork piece (with its own transparency), placed by anchor."""
 
     kind: Literal["piece"]
-    piece: str = Field(pattern=r"^pc_[0-9A-Za-z]+$")
+    piece: str = Field(pattern=r"^pc_[a-z2-7]{26}$")
     anchor: Anchor
     size: Annotated[
-        float,
-        Field(
-            gt=0,
-            le=1,
-            allow_inf_nan=False,
-            description="The piece's longer side, as a share of the frame's shorter side.",
-        ),
+        PositiveFraction,
+        Field(description="The piece's longer side, as a share of the frame's shorter side."),
     ]
     offset: Offset = Offset()
-    rotate: Annotated[float, Field(ge=-180, le=180, allow_inf_nan=False)] = 0
+    rotate: Rotation = 0
     mirror: Literal["none", "inline", "block"] = "none"
     overlaps_window: bool = Field(
         default=False,
@@ -236,7 +240,9 @@ class Decoration(SpecModel):
 
 
 class FrameSpec(SpecModel):
-    """One frame design. Headline, date and stamp are added in T-11b."""
+    """One frame design."""
+
+    # The headline, date and stamp come with T-11b.
 
     spec_version: Literal[1]
     aspect: Aspect
