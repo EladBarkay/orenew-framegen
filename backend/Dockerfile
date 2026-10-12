@@ -23,4 +23,5 @@ ENV PATH=/app/.venv/bin:$PATH PYTHONUNBUFFERED=1
 USER framegen
 EXPOSE 8000
 # X-Forwarded-* headers from Caddy are not trusted yet; T-56 adds that together with HTTPS.
-CMD ["uvicorn", "framegen.api.app:app", "--host", "0.0.0.0", "--port", "8000", "--no-proxy-headers"]
+# On stop, open requests (such as job event streams) get 10 s to end, then are closed.
+CMD ["uvicorn", "framegen.api.app:app", "--host", "0.0.0.0", "--port", "8000", "--no-proxy-headers", "--timeout-graceful-shutdown", "10"]

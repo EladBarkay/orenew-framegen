@@ -1957,6 +1957,72 @@
         ]
       }
     },
+    "/v1/workspaces/{workspace_id}/jobs/{job_id}/events": {
+      "get": {
+        "description": "Follow a job as it happens.",
+        "operationId": "getJobEvents",
+        "parameters": [
+          {
+            "description": "The job's ID.",
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "description": "The job's ID.",
+              "maxLength": 40,
+              "title": "Job Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The workspace's ID.",
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "description": "The workspace's ID.",
+              "maxLength": 40,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Server-sent events. Each `job` event carries the job (as getJob returns it): first its current state, then each change. The stream ends after the job has succeeded or failed (clients should then stop following), or after 10 minutes (reconnect to go on). Lines starting with ':' only keep the connection alive."
+          },
+          "204": {
+            "description": "A reconnect (with Last-Event-ID) to a job that has ended: nothing more will come, and browsers' EventSource stops reconnecting."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Get Job Events",
+        "tags": [
+          "jobs"
+        ]
+      }
+    },
     "/v1/workspaces/{workspace_id}/members": {
       "get": {
         "operationId": "listMembers",

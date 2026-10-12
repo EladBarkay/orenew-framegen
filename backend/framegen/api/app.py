@@ -18,6 +18,7 @@ from framegen.api.idempotency import (
 from framegen.db.engine import async_engine
 from framegen.db.idempotency_store import PostgresIdempotencyStore
 from framegen.health import Check, Readiness, default_checks
+from framegen.jobs.listener import JobEvents
 from framegen.jobs.queue import queue_app
 from framegen.project import LICENSE_ID, SOURCE_URL
 from framegen.settings import Settings, get_settings
@@ -79,10 +80,14 @@ def create_app(
         app.state.presigner = presign_client(app_settings)
         # The job queue; its connection pool connects only when a job is started.
         app.state.queue = queue_app(app_settings)
+        # Wakes job event streams; listens in the background, reconnecting as needed.
+        app.state.job_events = JobEvents(app_settings.database_conninfo)
+        app.state.job_events.start()
         try:
             await app.state.queue.open_async()
             yield
         finally:
+            await app.state.job_events.stop()
             await wait_for_pending_keys()
             await app.state.queue.close_async()
             await engine.dispose()
