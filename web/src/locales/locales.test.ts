@@ -65,14 +65,18 @@ describe("components", () => {
       text: "Hello",
       attributes: ["A cat"],
     });
-    expect(markupText("<img alt='A dog' title=Hi /><input value=\"Send\" />")).toEqual({
+    expect(markupText("<img alt='A dog' title=Hi />")).toEqual({
       text: "",
-      attributes: ["A dog", "Hi", "Send"],
+      attributes: ["A dog", "Hi"],
     });
-    expect(markupText('<p>{t("x")}</p><img alt={t("y")} />')).toEqual({
-      text: "",
-      attributes: [],
-    });
+    for (const correct of [
+      '<p>{t("x")}</p><img alt={t("y")} />',
+      '<img alt={t("y")} src="a.png" /><button title={t("x")} onclick={go}></button>',
+      '<select bind:value={lang}><option value="en">{t("en")}</option></select>',
+      '<p>{t("next")} &#x2192; &rarr;</p>',
+    ]) {
+      expect(markupText(correct), correct).toEqual({ text: "", attributes: [] });
+    }
   });
 });
 
@@ -90,17 +94,25 @@ describe("styles", () => {
   it("finds physical properties, and only properties", () => {
     const component = [
       "<script>const at = { top: 1 };</script>",
-      '<p style="padding-right: 2px" style:margin-left={x}></p>',
+      '<p style="padding-right: 2px" style:margin-left={x} style:float="left"></p>',
+      "<div style={`text-align: right; color: ${c}`}></div>",
       "<style>.top:hover { margin-left: 1px; border-left-width: 1px;",
-      "  border-top-left-radius: 2px; text-align: right; inset-inline: 0 }</style>",
+      "  border-top-left-radius: 2px; text-align: right; inset-inline: 0;",
+      "  padding: 0 0 0 1rem; margin: 0 1rem 0 1rem;",
+      "  &:focus { color: red } }",
+      ".b { margin-right: 1px; :global(.c) { color: red } }</style>",
     ].join("\n");
     expect(physicalProperties(component)).toEqual([
       "margin-left",
       "border-left-width",
       "border-top-left-radius",
       "text-align: right",
+      "padding: 0 0 0 1rem",
+      "margin-right",
       "padding-right",
+      "text-align: right",
       "margin-left",
+      "float: left",
     ]);
     expect(physicalProperties(".a { float: left; margin-inline: 0 }", false)).toEqual([
       "float: left",

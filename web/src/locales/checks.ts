@@ -5,7 +5,7 @@
 
 /** Attributes whose values people read or hear. */
 const TEXT_ATTRIBUTES =
-  /\s(?:title|alt|placeholder|label|value|aria-(?:label|description|placeholder|roledescription|valuetext))\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>{}]+))/g;
+  /\s(?:title|alt|placeholder|label|aria-(?:label|description|placeholder|roledescription|valuetext))\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>{}]+))/g;
 
 /** The text of a component's markup, without scripts, styles, comments and {expressions}. */
 export function markupText(source: string): { text: string; attributes: string[] } {
@@ -18,16 +18,19 @@ export function markupText(source: string): { text: string; attributes: string[]
   const attributes = [...markup.matchAll(TEXT_ATTRIBUTES)]
     .map((match) => match[1] ?? match[2] ?? match[3] ?? "")
     .filter((value) => /\p{L}/u.test(value));
-  const text = markup.replace(/<[^>]*>/g, " ").replace(/&\w+;/g, " ");
+  const text = markup.replace(/<[^>]*>/g, " ").replace(/&#?\w+;/g, " ");
   return { text: text.replace(/[^\p{L}]+/gu, " ").trim(), attributes };
 }
 
+/** Each {expression} becomes "", so `alt={t("x")}` reads as an empty attribute. */
 function withoutExpressions(markup: string): string {
   let kept = "";
   let depth = 0;
   for (const char of markup) {
-    if (char === "{") depth += 1;
-    else if (char === "}") depth = Math.max(0, depth - 1);
+    if (char === "{") {
+      if (depth === 0) kept += '""';
+      depth += 1;
+    } else if (char === "}") depth = Math.max(0, depth - 1);
     else if (depth === 0) kept += char;
   }
   return kept;
@@ -36,6 +39,9 @@ function withoutExpressions(markup: string): string {
 const PHYSICAL_PROPERTY =
   /^(?:(?:margin|padding|inset|border)-(?:left|right|top|bottom)(?:-.*)?|border-(?:top|bottom)-(?:left|right)-radius|left|right|top|bottom)$/;
 const PHYSICAL_VALUE = /^(?:text-align|float|clear)$/;
+/** Shorthands whose four values run top, right, bottom, left. */
+const FOUR_SIDES =
+  /^(?:margin|padding|inset|border-(?:width|style|color)|scroll-(?:margin|padding))$/;
 
 /** Physical properties among CSS declarations such as "margin-left: 1px; color: red". */
 function physicalDeclarations(declarations: string): string[] {
@@ -51,19 +57,27 @@ function physicalDeclarations(declarations: string): string[] {
     if (PHYSICAL_VALUE.test(property) && /^(?:left|right)\b/.test(value)) {
       return [`${property}: ${value}`];
     }
+    const sides = value.split(/\s+/);
+    if (FOUR_SIDES.test(property) && sides.length === 4 && sides[1] !== sides[3]) {
+      return [`${property}: ${value}`]; // left and right differ, so it does not mirror
+    }
     return [];
   });
 }
 
-/** Declarations inside the {blocks} of a style sheet; selectors are left out. */
+/**
+ * Declarations inside the {blocks} of a style sheet; selectors are left out. With nesting,
+ * the declarations before a nested rule are kept and its selector is dropped.
+ */
 function declarationsOf(css: string): string[] {
   const blocks: string[] = [];
   let current = "";
   let depth = 0;
   for (const char of css.replace(/\/\*[\s\S]*?\*\//g, "")) {
     if (char === "{") {
-      depth += 1;
+      if (depth > 0) blocks.push(current.slice(0, current.lastIndexOf(";") + 1));
       current = "";
+      depth += 1;
     } else if (char === "}") {
       blocks.push(current);
       current = "";
@@ -83,10 +97,12 @@ export function physicalProperties(source: string, isComponent = true): string[]
   const markup = source
     .replace(/<script[\s\S]*?<\/script>/g, "")
     .replace(/<style[\s\S]*?<\/style>/g, "");
-  const inline = [...markup.matchAll(/\sstyle\s*=\s*(?:"([^"]*)"|'([^']*)')/g)].map(
-    (match) => match[1] ?? match[2] ?? "",
+  const inline = [...markup.matchAll(/\sstyle\s*=\s*(?:"([^"]*)"|'([^']*)'|\{`([^`]*)`\})/g)].map(
+    (match) => match[1] ?? match[2] ?? match[3] ?? "",
   );
-  const directives = [...markup.matchAll(/\sstyle:([\w-]+)/g)].map((match) => `${match[1]}: x`);
+  const directives = [
+    ...markup.matchAll(/\sstyle:([\w-]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'))?/g),
+  ].map((match) => `${match[1]}: ${match[2] ?? match[3] ?? "x"}`);
   return [
     ...styles.flatMap(declarationsOf).flatMap(physicalDeclarations),
     ...inline.flatMap(physicalDeclarations),
