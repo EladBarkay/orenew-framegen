@@ -114,3 +114,21 @@ def test_nothing_is_loaded_from_the_network(server: HTTPServer) -> None:
 def test_the_size_is_checked(width: int, height: int) -> None:
     with pytest.raises(ValueError, match="each side"):
         rasterise(("<svg/>", width, height))
+
+
+def test_the_pixel_count_is_capped() -> None:
+    with pytest.raises(ValueError, match="more than"):
+        rasterise(("<svg/>", 10_000, 10_000))
+
+
+def test_a_crashed_chromium_is_started_again() -> None:
+    svg = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"></svg>'
+
+    async def run() -> bytes:
+        async with Rasteriser() as rasteriser:
+            await rasteriser.png(svg, 20, 20)
+            assert rasteriser._browser is not None
+            await rasteriser._browser.close()  # as if Chromium had died
+            return await rasteriser.png(svg, 20, 20)
+
+    assert alpha(asyncio.run(run())).getextrema() == (0, 0)

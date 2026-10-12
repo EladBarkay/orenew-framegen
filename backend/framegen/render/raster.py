@@ -5,6 +5,7 @@ gives the same pixels. The page loads nothing: no network, and the SVG's images 
 data: URLs (render.svg checks that).
 """
 
+import asyncio
 from types import TracebackType
 from typing import Self
 
@@ -13,8 +14,11 @@ from playwright.async_api import Browser, Playwright, Route, async_playwright
 MAX_SIDE = 16384
 """Chromium's largest screenshot side. Print sizes at 300 dpi stay well under it."""
 
-TIMEOUT_MS = 120_000
-"""For loading and drawing one frame: the largest take tens of seconds."""
+MAX_PIXELS = 80_000_000
+"""Enough for a 60x90 cm poster at 300 dpi; more would risk the worker's memory."""
+
+TIMEOUT_S = 120
+"""For everything one frame takes: the largest take tens of seconds."""
 
 LAUNCH_ARGS = [
     # The same pixels on every machine: no GPU, a fixed colour profile, no LCD
@@ -37,13 +41,18 @@ class Rasteriser:
     async def __aenter__(self) -> Self:
         self._playwright = await async_playwright().start()
         try:
-            self._browser = await self._playwright.chromium.launch(
-                executable_path=self._executable_path, args=LAUNCH_ARGS
-            )
+            await self._launch()
         except BaseException:
             await self._playwright.stop()
             raise
         return self
+
+    async def _launch(self) -> Browser:
+        assert self._playwright is not None
+        self._browser = await self._playwright.chromium.launch(
+            executable_path=self._executable_path, args=LAUNCH_ARGS
+        )
+        return self._browser
 
     async def __aexit__(
         self,
@@ -65,7 +74,17 @@ class Rasteriser:
             raise RuntimeError("use the Rasteriser in 'async with'")
         if not (1 <= width <= MAX_SIDE and 1 <= height <= MAX_SIDE):
             raise ValueError(f"each side must be 1 to {MAX_SIDE} pixels, not {width}x{height}")
-        context = await self._browser.new_context(
+        if width * height > MAX_PIXELS:
+            raise ValueError(f"{width}x{height} is more than {MAX_PIXELS:,} pixels")
+        async with asyncio.timeout(TIMEOUT_S):
+            return await self._png(svg, width, height)
+
+    async def _png(self, svg: str, width: int, height: int) -> bytes:
+        browser = self._browser
+        if browser is None or not browser.is_connected():
+            # Chromium crashed or was killed: start it again rather than fail every frame.
+            browser = await self._launch()
+        context = await browser.new_context(
             viewport={"width": width, "height": height},
             device_scale_factor=1,
             offline=True,
@@ -74,7 +93,6 @@ class Rasteriser:
         )
         try:
             page = await context.new_page()
-            page.set_default_timeout(TIMEOUT_MS)
             await page.route("**/*", _refuse)
             await page.set_content(
                 "<!doctype html><html><head><style>html,body{margin:0;background:transparent}"

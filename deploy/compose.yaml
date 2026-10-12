@@ -118,6 +118,7 @@ services:
       dockerfile: backend/Dockerfile
       target: worker
     image: framegen-worker:local
+    pull_policy: never
     environment: *backend-environment
     command: [framegen-worker]
     # Longer than the worker's own drain (STOP_GRACE, 30 s), so running jobs can finish.
