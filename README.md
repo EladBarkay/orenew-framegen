@@ -34,7 +34,8 @@ docker compose -f deploy/compose.yaml up --build --wait
 ```
 
 Or run the API and web app directly while developing. The API expects Postgres and
-storage; start just those in Docker and create the bucket from the backend:
+storage; start just those in Docker and create the bucket from the backend (if you
+changed their ports, see "Ports" in `deploy/README.md` first):
 
 ```sh
 docker compose -f deploy/compose.yaml up -d --wait postgres storage
