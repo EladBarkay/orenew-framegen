@@ -7,7 +7,7 @@ from fastapi import FastAPI, Request, Response, status
 from pydantic import BaseModel
 
 from framegen import __version__
-from framegen.api import assets, auth, workspaces
+from framegen.api import assets, auth, jobs, workspaces
 from framegen.api.errors import ERROR_RESPONSES, install_error_handlers
 from framegen.api.idempotency import (
     IdempotencyMiddleware,
@@ -18,6 +18,7 @@ from framegen.api.idempotency import (
 from framegen.db.engine import async_engine
 from framegen.db.idempotency_store import PostgresIdempotencyStore
 from framegen.health import Check, Readiness, default_checks
+from framegen.jobs.queue import queue_app
 from framegen.project import LICENSE_ID, SOURCE_URL
 from framegen.settings import Settings, get_settings
 from framegen.storage.client import presign_client, s3_client
@@ -76,10 +77,14 @@ def create_app(
         # Neither connects until used.
         app.state.storage = s3_client(app_settings)
         app.state.presigner = presign_client(app_settings)
+        # The job queue; its connection pool connects only when a job is started.
+        app.state.queue = queue_app(app_settings)
         try:
+            await app.state.queue.open_async()
             yield
         finally:
             await wait_for_pending_keys()
+            await app.state.queue.close_async()
             await engine.dispose()
 
     app = FastAPI(
@@ -105,6 +110,7 @@ def create_app(
     app.include_router(auth.router)
     app.include_router(workspaces.router)
     app.include_router(assets.router)
+    app.include_router(jobs.router)
 
     @app.get("/v1/health", operation_id="getHealth", tags=["system"])
     def health() -> Health:

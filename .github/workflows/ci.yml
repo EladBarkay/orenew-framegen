@@ -116,6 +116,8 @@ jobs:
           fi
       - name: Upload and download a file through the public entrance
         run: deploy/smoke-upload.sh http://localhost:8080
+      - name: Start a demo job and follow it to the end through the public entrance
+        run: deploy/smoke-job.sh http://localhost:8080
       - name: Logs
         if: failure()
         run: docker compose -f deploy/compose.yaml logs

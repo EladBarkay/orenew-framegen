@@ -235,6 +235,33 @@
         "title": "CreatedInvitation",
         "type": "object"
       },
+      "DemoJob": {
+        "properties": {
+          "fail_with": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "pattern": "^demo_[a-z_]+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Fail halfway with this error code, to try out error handling. Starts with demo_, so it is never mistaken for a real failure.",
+            "title": "Fail With"
+          },
+          "steps": {
+            "default": 5,
+            "maximum": 20.0,
+            "minimum": 1.0,
+            "title": "Steps",
+            "type": "integer"
+          }
+        },
+        "title": "DemoJob",
+        "type": "object"
+      },
       "ErrorBody": {
         "properties": {
           "code": {
@@ -372,6 +399,133 @@
           "email"
         ],
         "title": "InvitationCreate",
+        "type": "object"
+      },
+      "Job": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JobError"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Set when the job failed."
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "progress": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Progress",
+            "type": "number"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Set when the job succeeded.",
+            "title": "Result"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "succeeded",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "step": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What the job is doing now, in English.",
+            "title": "Step"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "status",
+          "progress",
+          "step",
+          "result",
+          "error",
+          "created_at",
+          "started_at",
+          "finished_at"
+        ],
+        "title": "Job",
+        "type": "object"
+      },
+      "JobError": {
+        "properties": {
+          "code": {
+            "description": "Stable, for programs; as in API errors.",
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "description": "An English hint for developers.",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "JobError",
         "type": "object"
       },
       "Member": {
@@ -1676,6 +1830,130 @@
         "summary": "Revoke Invitation",
         "tags": [
           "workspaces"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/jobs/demo": {
+      "post": {
+        "description": "Start a job that only counts through its steps, for checking that jobs work in a\ndeployment and for trying out a client. It uses no AI and costs nothing. A workspace\ncan have one demo job at a time, so the shared queue stays free for real work.",
+        "operationId": "startDemoJob",
+        "parameters": [
+          {
+            "description": "The workspace's ID.",
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "description": "The workspace's ID.",
+              "maxLength": 40,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DemoJob"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Start Demo Job",
+        "tags": [
+          "jobs"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/jobs/{job_id}": {
+      "get": {
+        "description": "A job's status, progress, and its result or error once it has ended.",
+        "operationId": "getJob",
+        "parameters": [
+          {
+            "description": "The job's ID.",
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "description": "The job's ID.",
+              "maxLength": 40,
+              "title": "Job Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The workspace's ID.",
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "description": "The workspace's ID.",
+              "maxLength": 40,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Get Job",
+        "tags": [
+          "jobs"
         ]
       }
     },

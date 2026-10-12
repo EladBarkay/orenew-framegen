@@ -14,10 +14,24 @@ from framegen.jobs import tasks
 from framegen.settings import Settings
 
 
+class QueueUnavailable(Exception):
+    """The queue did not take the job. The job is recorded as failed under ``job_id``."""
+
+    def __init__(self, job_id: str) -> None:
+        super().__init__(f"job {job_id} could not be queued")
+        self.job_id = job_id
+
+
 def queue_app(settings: Settings) -> procrastinate.App:
     """The Procrastinate app. Open it (``open_async``) before deferring or working."""
     app = procrastinate.App(
-        connector=procrastinate.PsycopgConnector(conninfo=settings.database_conninfo)
+        connector=procrastinate.PsycopgConnector(
+            conninfo=settings.database_conninfo,
+            # No connection is made until one is needed, so the API starts (and reports
+            # itself not ready) while the database is down.
+            min_size=0,
+            max_size=4,
+        )
     )
     # Registered on each app afresh (not through a shared Blueprint), so several apps
     # in one process, as in tests, all know the same names.
@@ -38,7 +52,7 @@ async def start_job(
     """Records a queued job and puts its task on the queue. Returns the job's ID.
 
     If the queue cannot take it, the job is recorded as failed (queue_unavailable) and
-    the error is raised. Should the queue have taken it after all (the answer was lost),
+    QueueUnavailable is raised. Should the queue have taken it after all (the answer was lost),
     either the worker skips it (only queued jobs are run) or, when a worker started it
     first, the job simply goes on and its ID is returned.
     """
@@ -58,7 +72,7 @@ async def start_job(
         )
     try:
         await app.configure_task(job_type).defer_async(job_id=job_id, **arguments)
-    except Exception:
+    except Exception as error:
         async with engine.begin() as conn:
             marked = await conn.execute(
                 update(jobs)
@@ -75,5 +89,5 @@ async def start_job(
         if already_claimed:
             # The queue took it after all and a worker already started it.
             return job_id
-        raise
+        raise QueueUnavailable(job_id) from error
     return job_id
