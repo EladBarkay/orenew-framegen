@@ -32,7 +32,7 @@
     },
     "Band": {
       "additionalProperties": false,
-      "description": "A solid strip flush with one edge of the frame, across its full length.",
+      "description": "A solid strip flush with one edge of the frame, across its full length. Its\nthickness is a share of the frame's size across that edge (the height, for the top\nand bottom edges).",
       "properties": {
         "color": {
           "examples": [
@@ -65,6 +65,12 @@
           "title": "Opacity",
           "type": "number"
         },
+        "overlapsWindow": {
+          "default": false,
+          "description": "Whether the layer may cover the photo window (DESIGN.md 4.4), as a caption bar over the photo or a flower over its corner does. If not, the window is cut through it.",
+          "title": "Overlapswindow",
+          "type": "boolean"
+        },
         "shape": {
           "const": "band",
           "title": "Shape",
@@ -89,7 +95,7 @@
     },
     "Bar": {
       "additionalProperties": false,
-      "description": "A strip parallel to one edge, at a distance from it (it may cross the window's\nedge, as in a caption bar).",
+      "description": "A strip parallel to one edge, at a distance from it (it may cross the window's\nedge, as in a caption bar). Distance and thickness are shares of the frame's size\nacross that edge.",
       "properties": {
         "color": {
           "examples": [
@@ -129,6 +135,12 @@
           "title": "Opacity",
           "type": "number"
         },
+        "overlapsWindow": {
+          "default": false,
+          "description": "Whether the layer may cover the photo window (DESIGN.md 4.4), as a caption bar over the photo or a flower over its corner does. If not, the window is cut through it.",
+          "title": "Overlapswindow",
+          "type": "boolean"
+        },
         "shape": {
           "const": "bar",
           "title": "Shape",
@@ -154,7 +166,7 @@
     },
     "Box": {
       "additionalProperties": false,
-      "description": "A rectangle in frame fractions, from the top-start corner.",
+      "description": "A rectangle from the frame's top-start corner: x and width are shares of the\nframe's width, y and height of its height.",
       "properties": {
         "height": {
           "exclusiveMinimum": 0,
@@ -725,6 +737,7 @@
     },
     "Offset": {
       "additionalProperties": false,
+      "description": "A move from the anchor: x towards the end (a share of the frame's width), y\ndownwards (a share of its height).",
       "properties": {
         "x": {
           "default": 0,
@@ -787,7 +800,7 @@
         },
         "overlapsWindow": {
           "default": false,
-          "description": "Whether the piece may cover the window's edge (DESIGN.md 4.4). If not, the window is cut through it.",
+          "description": "Whether the layer may cover the photo window (DESIGN.md 4.4), as a caption bar over the photo or a flower over its corner does. If not, the window is cut through it.",
           "title": "Overlapswindow",
           "type": "boolean"
         },
@@ -847,6 +860,12 @@
           "minimum": 0,
           "title": "Opacity",
           "type": "number"
+        },
+        "overlapsWindow": {
+          "default": false,
+          "description": "Whether the layer may cover the photo window (DESIGN.md 4.4), as a caption bar over the photo or a flower over its corner does. If not, the window is cut through it.",
+          "title": "Overlapswindow",
+          "type": "boolean"
         },
         "rotate": {
           "default": 0,
@@ -916,7 +935,7 @@
     },
     "Stroke": {
       "additionalProperties": false,
-      "description": "A line around the window, or along the frame's outer edge. `offset` is the gap\nto what it surrounds: outwards from the window, inwards from the frame's edge. A\nwindow stroke that reaches past the frame is clipped there.",
+      "description": "A line around the window, or along the frame's outer edge. `offset` is the gap\nto what it surrounds: outwards from the window, inwards from the frame's edge. Width\nand offset are shares of the frame's shorter side. A window stroke that reaches past\nthe frame is clipped there.",
       "properties": {
         "around": {
           "default": "window",
@@ -955,6 +974,12 @@
           "minimum": 0,
           "title": "Opacity",
           "type": "number"
+        },
+        "overlapsWindow": {
+          "default": false,
+          "description": "Whether the layer may cover the photo window (DESIGN.md 4.4), as a caption bar over the photo or a flower over its corner does. If not, the window is cut through it.",
+          "title": "Overlapswindow",
+          "type": "boolean"
         },
         "shape": {
           "const": "stroke",

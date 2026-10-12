@@ -198,8 +198,10 @@ side by side.
 
 - The window area is **fully transparent** (alpha 0), always: the renderer cuts it
   from the mask after every layer is drawn. Nothing the AI produces can fill it.
-- Decoration may **overlap the window edge** (a flower over the corner of the photo)
-  only where the spec says so, with partial alpha; the rest of the window stays clear.
+- Decoration may **overlap the window** only where the spec says so (`overlapsWindow` on
+  a layer): a flower over the corner of the photo, or a caption bar across it as in many
+  real frames. The rest of the window stays clear, and the output check (T-18)
+  looks at the window minus what those layers cover.
 - Everything outside the window is whatever the design is: opaque, partly or fully
   transparent.
 - Output is checked after rendering: window alpha exactly 0, the size in pixels exactly
