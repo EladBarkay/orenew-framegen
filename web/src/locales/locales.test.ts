@@ -117,5 +117,21 @@ describe("styles", () => {
     expect(physicalProperties(".a { float: left; margin-inline: 0 }", false)).toEqual([
       "float: left",
     ]);
+    const mirrored = [
+      "padding: calc(1rem + 2px) 0",
+      "padding: clamp(1rem, 2vw, 2rem) 1rem",
+      "border-color: rgb(0 0 0) transparent",
+      "border-radius: 4px",
+      "border-radius: 4px 4px 0 0",
+      "border-radius: 50% / 10%",
+    ];
+    for (const declaration of mirrored) {
+      expect(physicalProperties(`.a { ${declaration} }`, false), declaration).toEqual([]);
+    }
+    for (const declaration of ["border-radius: 4px 0 0 4px", "border-radius: 0 8px"]) {
+      expect(physicalProperties(`.a { ${declaration} }`, false), declaration).toEqual([
+        declaration,
+      ]);
+    }
   });
 });

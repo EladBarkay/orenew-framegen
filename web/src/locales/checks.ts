@@ -57,12 +57,38 @@ function physicalDeclarations(declarations: string): string[] {
     if (PHYSICAL_VALUE.test(property) && /^(?:left|right)\b/.test(value)) {
       return [`${property}: ${value}`];
     }
-    const sides = value.split(/\s+/);
+    const sides = values(value);
     if (FOUR_SIDES.test(property) && sides.length === 4 && sides[1] !== sides[3]) {
       return [`${property}: ${value}`]; // left and right differ, so it does not mirror
     }
+    if (property === "border-radius" && !mirrors(values(value.split("/")[0] ?? ""))) {
+      return [`${property}: ${value}`];
+    }
     return [];
   });
+}
+
+/** The space-separated values of a declaration; spaces inside calc() and the like do not split. */
+function values(value: string): string[] {
+  const found: string[] = [];
+  let current = "";
+  let depth = 0;
+  for (const char of value.trim()) {
+    if (char === "(") depth += 1;
+    if (char === ")") depth = Math.max(0, depth - 1);
+    if (/\s/.test(char) && depth === 0) {
+      if (current) found.push(current);
+      current = "";
+    } else current += char;
+  }
+  if (current) found.push(current);
+  return found;
+}
+
+/** Whether border-radius corners are the same on the left and the right. */
+function mirrors(corners: string[]): boolean {
+  const [a, b = a, c = a, d = b] = corners; // top-left, top-right, bottom-right, bottom-left
+  return a === b && c === d;
 }
 
 /**
