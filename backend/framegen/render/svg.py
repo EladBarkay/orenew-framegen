@@ -3,9 +3,8 @@
 The SVG is rasterised by Chromium (T-12b). Everything is computed here in pixels, so the
 same spec, size and images always give the same text, and so the same pixels.
 
-Order: the decoration layers as listed, then the window is cut out of them; layers that
-may overlap the window are drawn after the cut, on top, in their own order. Text comes
-with T-13.
+Layers are drawn in their order, the first at the bottom. Each is cut by the window,
+except layers marked to overlap it. Text comes with T-13.
 """
 
 from collections.abc import Iterator, Mapping
@@ -29,6 +28,10 @@ class Image:
     """A data: URL (the renderer loads nothing from the network)."""
     width: int
     height: int
+
+    def __post_init__(self) -> None:
+        if self.width < 1 or self.height < 1:
+            raise ValueError("an image must be at least 1x1 pixels")
 
 
 @dataclass(frozen=True)
@@ -59,27 +62,27 @@ def render_svg(
     every piece and window mask the spec names, by ID."""
     if width < 1 or height < 1:
         raise ValueError("the size must be at least 1x1 pixels")
+    if (orientation == "portrait" and width > height) or (
+        orientation == "landscape" and width < height
+    ):
+        raise ValueError(f"a {orientation} frame cannot be {width}x{height} pixels")
     frame = _Frame(width, height, direction, images or {})
     window = frame.window_rect(spec.window, orientation)
-    under = [layer for layer in spec.decoration.layers if not _overlaps(layer)]
-    over = [layer for layer in spec.decoration.layers if _overlaps(layer)]
     parts = [
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
         f'viewBox="0 0 {width} {height}">',
         "<defs>",
         *frame.window_cut(spec.window, window),
         "</defs>",
-        '<g mask="url(#window-cut)">',
-        *(frame.layer(layer, spec.window, window) for layer in under),
-        "</g>",
-        *(frame.layer(layer, spec.window, window) for layer in over),
+        *(
+            # A group carries the cut, so a layer's own transform does not move it.
+            element if layer.overlaps_window else f'<g mask="url(#window-cut)">{element}</g>'
+            for layer in spec.decoration.layers
+            for element in [frame.layer(layer, spec.window, window)]
+        ),
         "</svg>",
     ]
     return "\n".join(parts) + "\n"
-
-
-def _overlaps(layer: Layer) -> bool:
-    return layer.overlaps_window
 
 
 def _n(value: float) -> str:
@@ -88,8 +91,12 @@ def _n(value: float) -> str:
     return "0" if text == "-0" else text
 
 
+def _opacity(opacity: float) -> str:
+    return f' opacity="{_n(opacity)}"' if opacity != 1 else ""
+
+
 def _paint(color: str, opacity: float) -> str:
-    return f'fill="{color}"' + (f' opacity="{_n(opacity)}"' if opacity != 1 else "")
+    return f'fill="{color}"' + _opacity(opacity)
 
 
 class _Frame:
@@ -105,6 +112,11 @@ class _Frame:
     def x(self, inline: float) -> float:
         """A share of the width from the start side, in pixels from the left."""
         return (1 - inline) * self.width if self.rtl else inline * self.width
+
+    def angle(self, degrees: float) -> float:
+        """A clockwise turn as written for left-to-right; right-to-left mirrors it, as it
+        mirrors positions, so both directions draw mirror images."""
+        return -degrees if self.rtl else degrees
 
     def image(self, image_id: str) -> Image:
         try:
@@ -148,11 +160,11 @@ class _Frame:
             yield self.window_shape(window, rect, 'fill="#000000"')
         yield "</mask>"
 
-    def window_shape(
-        self, window: Window, rect: Rect, paint: str, radius: float | None = None
-    ) -> str:
-        """The window's outline around `rect` (a mask window is outlined as its box).
-        `radius`, in pixels, replaces a rounded window's own."""
+    def window_shape(self, window: Window, rect: Rect, paint: str, grow: float = 0) -> str:
+        """The window's outline around `rect`, moved outwards by `grow` pixels with its
+        corners kept parallel (a mask window is outlined as its box)."""
+        radius = (window.radius or 0) * min(rect.width, rect.height) + grow
+        rect = rect.grow(grow)
         x, y, w, h = rect.x, rect.y, rect.width, rect.height
         if window.shape == "oval":
             return (
@@ -167,9 +179,7 @@ class _Frame:
                 f"A {_n(w / 2)} {_n(ry)} 0 0 1 {_n(x + w)} {_n(y + ry)} "
                 f'L {_n(x + w)} {_n(y + h)} Z" {paint}/>'
             )
-        if radius is None:
-            radius = (window.radius or 0) * min(w, h) if window.shape == "rounded" else 0
-        corner = f' rx="{_n(radius)}"' if radius else ""
+        corner = f' rx="{_n(radius)}"' if window.shape == "rounded" and radius else ""
         return f'<rect x="{_n(x)}" y="{_n(y)}" width="{_n(w)}" height="{_n(h)}"{corner} {paint}/>'
 
     # Layers.
@@ -189,8 +199,8 @@ class _Frame:
 
     def stroke(self, stroke: Stroke, window: Window, window_rect: Rect) -> str:
         width = stroke.width * self.short
-        paint = f'fill="none" stroke="{stroke.color}" stroke-width="{_n(width)}"' + (
-            f' opacity="{_n(stroke.opacity)}"' if stroke.opacity != 1 else ""
+        paint = f'fill="none" stroke="{stroke.color}" stroke-width="{_n(width)}"' + _opacity(
+            stroke.opacity
         )
         middle = stroke.offset * self.short + width / 2  # from the edge to the line's centre
         if stroke.around == "frame":
@@ -199,11 +209,7 @@ class _Frame:
                 f'<rect x="{_n(inner.x)}" y="{_n(inner.y)}" width="{_n(inner.width)}" '
                 f'height="{_n(inner.height)}" {paint}/>'
             )
-        # Around the window: its outline moved outwards, corners kept parallel.
-        radius = None
-        if window.shape == "rounded" and window.radius is not None:
-            radius = window.radius * min(window_rect.width, window_rect.height) + middle
-        return self.window_shape(window, window_rect.grow(middle), paint, radius)
+        return self.window_shape(window, window_rect, paint, grow=middle)
 
     def strip(self, layer: Band | Bar, distance: float, thickness: float) -> str:
         across = self.height if layer.edge in ("top", "bottom") else self.width
@@ -228,7 +234,8 @@ class _Frame:
         left = self.x(box.x + box.width) if self.rtl else self.x(box.x)
         top = box.y * self.height
         cx, cy = left + w / 2, top + h / 2
-        turn = f' transform="rotate({_n(shape.rotate)} {_n(cx)} {_n(cy)})"' if shape.rotate else ""
+        angle = self.angle(shape.rotate)
+        turn = f' transform="rotate({_n(angle)} {_n(cx)} {_n(cy)})"' if angle else ""
         paint = _paint(shape.color, shape.opacity)
         if shape.shape == "ellipse":
             return (
@@ -250,8 +257,8 @@ class _Frame:
         top = ay - block * h
         cx, cy = left + w / 2, top + h / 2
         steps = []
-        if piece.rotate:
-            steps.append(f"rotate({_n(piece.rotate)} {_n(cx)} {_n(cy)})")
+        if angle := self.angle(piece.rotate):
+            steps.append(f"rotate({_n(angle)} {_n(cx)} {_n(cy)})")
         if piece.mirror != "none":
             sx, sy = (-1, 1) if piece.mirror == "inline" else (1, -1)
             steps.append(

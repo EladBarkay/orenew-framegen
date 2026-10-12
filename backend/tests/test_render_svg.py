@@ -48,10 +48,19 @@ def piece(**changes: Any) -> dict[str, Any]:
     return {"kind": "piece", "piece": PIECE, "anchor": "bottom-start", "size": 0.2, **changes}
 
 
-def layers(root: ET.Element) -> list[ET.Element]:
-    group = root.find("s:g", NS)
-    assert group is not None and group.attrib["mask"] == "url(#window-cut)"
-    return list(group)
+def layers(root: ET.Element, *, cut: bool = True) -> list[ET.Element]:
+    """The drawn layers in order; cut ones are each wrapped in a group with the mask."""
+    drawn = []
+    for element in root:
+        if element.tag.endswith("defs"):
+            continue
+        if element.tag.endswith("}g"):
+            assert element.attrib["mask"] == "url(#window-cut)" and len(element) == 1
+            drawn.append(element[0])
+        else:
+            assert not cut, "a layer was drawn without the window cut"
+            drawn.append(element)
+    return drawn
 
 
 def test_the_document_has_the_requested_size() -> None:
@@ -144,7 +153,7 @@ def test_shapes_rotate_about_their_centre_and_follow_the_direction() -> None:
     }
     (rtl,) = layers(draw(spec([shape])))
     assert numbers(rtl, "x", "y", "width", "height") == (600, 300, 300, 150)
-    assert rtl.attrib["transform"] == "rotate(30 750 375)"
+    assert rtl.attrib["transform"] == "rotate(-30 750 375)"  # mirrored, as its place is
     (ltr,) = layers(draw(spec([{**shape, "shape": "ellipse", "rotate": 0}]), "ltr"))
     assert numbers(ltr, "cx", "cy", "rx", "ry") == (250, 375, 150, 75)
     assert "transform" not in ltr.attrib
@@ -163,16 +172,37 @@ def test_pieces_sit_on_their_anchor() -> None:
 def test_pieces_turn_and_mirror_in_place() -> None:
     (turned,) = layers(draw(spec([piece(rotate=-90, mirror="inline")])))
     assert turned.attrib["transform"] == (
-        "rotate(-90 900 1450) translate(900 1450) scale(-1 1) translate(-900 -1450)"
+        "rotate(90 900 1450) translate(900 1450) scale(-1 1) translate(-900 -1450)"
     )
 
 
-def test_overlapping_pieces_are_drawn_after_the_cut() -> None:
+def test_layers_keep_their_order_and_only_overlapping_ones_skip_the_cut() -> None:
     root = draw(spec([band("top"), piece(overlapsWindow=True), band("bottom")]))
-    assert [element.tag.split("}")[1] for element in layers(root)] == ["rect", "rect"]
-    over = root.find("s:image", NS)
-    assert over is not None and numbers(over, "x", "y") == (800, 1400)
-    assert list(root)[-1] is over
+    top, flower, bottom = layers(root, cut=False)
+    assert [element.tag.split("}")[1] for element in (top, flower, bottom)] == [
+        "rect", "image", "rect"]  # fmt: skip
+    # The flower is not in a cut group; the bottom band, listed after it, covers it.
+    assert [element.tag.split("}")[1] for element in root][1:] == ["g", "image", "g"]
+
+
+def test_a_rotated_layer_keeps_the_cut_in_place() -> None:
+    shape = {"kind": "vector", "shape": "rectangle", "rotate": 45, "color": "#000000",
+             "box": {"x": 0, "y": 0, "width": 1, "height": 1}}  # fmt: skip
+    root = draw(spec([shape]))
+    group = list(root)[1]
+    assert "transform" not in group.attrib and "transform" in group[0].attrib
+
+
+@pytest.mark.parametrize(("orientation", "size"), [("portrait", (1500, 1000)),
+                                                   ("landscape", (1000, 1500))])  # fmt: skip
+def test_the_size_must_fit_the_orientation(orientation: str, size: tuple[int, int]) -> None:
+    with pytest.raises(ValueError, match="cannot be"):
+        render_svg(spec([band("top")]), orientation, *size)  # type: ignore[arg-type]
+
+
+def test_an_image_has_a_size() -> None:
+    with pytest.raises(ValueError, match="at least"):
+        Image("data:image/png;base64,", width=0, height=10)
 
 
 def test_a_caption_bar_may_cover_the_photo() -> None:
@@ -180,7 +210,6 @@ def test_a_caption_bar_may_cover_the_photo() -> None:
     bar = {"kind": "vector", "shape": "bar", "edge": "bottom", "distance": 0.09,
            "thickness": 0.074, "color": "#ffffff", "overlapsWindow": True}  # fmt: skip
     root = draw(spec([band("top"), bar]))
-    assert len(layers(root)) == 1
     over = list(root)[-1]
     assert over.tag.endswith("rect") and numbers(over, "y") == (1254,)
 
@@ -189,7 +218,7 @@ def test_the_same_input_gives_the_same_text() -> None:
     frame = spec([band("top"), piece(rotate=12.345678)], shape="rounded", radius=0.123456)
     first = render_svg(frame, "portrait", 1333, 2000, images=IMAGES)
     assert first == render_svg(frame, "portrait", 1333, 2000, images=IMAGES)
-    assert "rotate(12.346 " in first
+    assert "rotate(-12.346 " in first
 
 
 def test_a_missing_piece_image_is_an_error() -> None:
