@@ -6,6 +6,7 @@ and editable. Each component sits in a named slot per orientation.
 
 import datetime
 import re
+import unicodedata
 from typing import Annotated, Literal, Self
 
 from pydantic import BeforeValidator, Discriminator, Field, Tag, model_validator
@@ -65,8 +66,10 @@ FontRef = Annotated[
 
 _CONTROL = re.compile(
     "[\x00-\x09\x0b-\x1f\x7f-\x9f"  # control characters, but not the line break
-    "\u202a-\u202e\u2066-\u2069"  # direction overrides and isolates: they reorder text
-    "\u2028\u2029]"  # other line and paragraph separators
+    "\u202a-\u202e\u2066-\u206f"  # direction overrides, isolates and old format controls
+    "\u2028\u2029"  # other line and paragraph separators
+    "\ufeff\ufff9-\ufffb"  # byte-order mark and interlinear annotation
+    "\ud800-\udfff]"  # unpaired surrogates: not encodable
 )
 """Not allowed in text. The direction marks Hebrew needs (U+200E, U+200F) are allowed."""
 
@@ -77,8 +80,16 @@ def _no_control(value: object) -> object:
     return value
 
 
+_FILLERS = {"\u115f", "\u1160", "\u3164", "\uffa0"}
+"""Hangul fillers: letters by category, but they draw nothing."""
+
+
+def _visible(char: str) -> bool:
+    return not (char.isspace() or unicodedata.category(char) == "Cf" or char in _FILLERS)
+
+
 def _not_blank(value: object) -> object:
-    if isinstance(value, str) and not value.strip():
+    if isinstance(value, str) and not any(_visible(char) for char in value):
         raise PydanticCustomError("spec_text_empty", "The text is empty.")
     return value
 
@@ -151,16 +162,32 @@ class HebrewFormat(SpecModel):
 DateFormat = Annotated[GregorianFormat | HebrewFormat, Field(discriminator="calendar")]
 
 
+FIRST_YEAR = 1900
+LAST_YEAR = 2199
+
+
 def _iso_date(value: object) -> object:
     # JSON has no date type: exactly YYYY-MM-DD, nothing looser (no times, no numbers).
     if type(value) is datetime.date:  # already read, as when a spec is validated again
-        return value
-    if not (isinstance(value, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", value)):
+        return _in_range(value)
+    if not (isinstance(value, str) and re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", value)):
         raise PydanticCustomError("date_type", "Input should be a date as YYYY-MM-DD")
     try:
-        return datetime.date.fromisoformat(value)
+        date = datetime.date.fromisoformat(value)
     except ValueError as error:
         raise PydanticCustomError("date_from_datetime_parsing", "Not a real date") from error
+    return _in_range(date)
+
+
+def _in_range(date: datetime.date) -> datetime.date:
+    # Events, not history: this also leaves room for the after-sunset next day.
+    if not FIRST_YEAR <= date.year <= LAST_YEAR:
+        raise PydanticCustomError(
+            "spec_date_range",
+            "The date is outside {first}-{last}.",
+            {"first": FIRST_YEAR, "last": LAST_YEAR},
+        )
+    return date
 
 
 class Date(TextStyle):
