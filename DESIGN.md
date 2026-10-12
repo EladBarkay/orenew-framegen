@@ -140,13 +140,14 @@ The frame spec is JSON, validated by a published schema (`backend/framegen/spec`
       { "kind": "piece",  "piece": "pc_7f…", "anchor": "bottom-end", "size": 0.32, "rotate": 180 }
     ]
   },
-  "headline": { "text": "נועה ועודד", "font": "font_…", "color": "#3a2c12",
+  "headline": { "text": "נועה ועודד", "font": "font_…", "color": "#3a2c12", "size": 0.07,
                 "slot": { "portrait": "bottom-band", "landscape": "bottom-band" } },
   "date": { "value": "2026-10-12", "afterSunset": true,
-            "formats": [ { "calendar": "hebrew", "style": "long", "numerals": "hebrew" },
+            "font": "font_…", "color": "#3a2c12", "size": 0.03,
+            "formats": [ { "calendar": "hebrew", "style": "day-month-year", "numerals": "hebrew" },
                          { "calendar": "gregorian", "pattern": "dd.MM.yyyy" } ],
             "joiner": " · ", "slot": "under-headline" },
-  "stamp": { "ref": "brand-kit", "slot": "bottom-end", "size": 0.08 }
+  "stamp": { "source": "brand-kit", "slot": "end-edge", "size": 0.08 }
 }
 ```
 

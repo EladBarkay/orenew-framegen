@@ -44,6 +44,8 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "W", "F", "I", "B", "UP", "SIM", "RUF"]
+# Hebrew text is everywhere in this project; its letters are not look-alikes here.
+allowed-confusables = ["ו", "ס", "ן"]
 
 [tool.mypy]
 strict = true
