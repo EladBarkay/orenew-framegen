@@ -12,7 +12,8 @@ vi.mock("@sveltejs/kit", () => ({
   },
 }));
 
-const { choose, listWorkspaces } = await import("./workspace.svelte.ts");
+const { choose, forget, listWorkspaces, preferredFor, select } =
+  await import("./workspace.svelte.ts");
 
 const personal = { id: "wsp_p", name: "Personal", kind: "personal", role: "owner" } as const;
 const studio = { id: "wsp_s", name: "Light & Lace", kind: "studio", role: "admin" } as const;
@@ -52,5 +53,19 @@ describe("listWorkspaces", () => {
   it("sends a visitor whose session ended to sign-in", async () => {
     GET.mockResolvedValue({ data: undefined, response: { status: 401 } });
     await expect(listWorkspaces(here)).rejects.toMatchObject({ location: "/signin?next=%2F" });
+  });
+});
+
+describe("preferredFor", () => {
+  beforeEach(() => forget());
+
+  it("prefers this tab's choice for the same user", () => {
+    select(studio, "usr_a");
+    expect(preferredFor("usr_a")[0]).toBe("wsp_s");
+  });
+
+  it("ignores another user's choice", () => {
+    select(studio, "usr_a");
+    expect(preferredFor("usr_b")[0]).toBeNull();
   });
 });

@@ -14,7 +14,11 @@ export type Workspace = components["schemas"]["Workspace"];
 
 const REMEMBERED = "framegen.workspace.";
 
-export const workspace: { current: Workspace | null } = $state({ current: null });
+/** The chosen workspace, and whose choice it is: it only counts for that user. */
+export const workspace: { current: Workspace | null; userId: string | null } = $state({
+  current: null,
+  userId: null,
+});
 
 /** Every workspace the user belongs to, following the pages of the list. */
 export async function listWorkspaces(here: URL): Promise<Workspace[]> {
@@ -53,6 +57,7 @@ export function remembered(userId: string): string | null {
 
 export function select(chosen: Workspace, userId: string): void {
   workspace.current = chosen;
+  workspace.userId = userId;
   try {
     localStorage.setItem(REMEMBERED + userId, chosen.id);
   } catch {
@@ -63,6 +68,13 @@ export function select(chosen: Workspace, userId: string): void {
 /** On signing out: nothing of this user's choice stays in memory for the next one. */
 export function forget(): void {
   workspace.current = null;
+  workspace.userId = null;
+}
+
+/** What to prefer for `userId`: their choice in this tab, then the one remembered. */
+export function preferredFor(userId: string): (string | null)[] {
+  const inMemory = workspace.userId === userId ? (workspace.current?.id ?? null) : null;
+  return [inMemory, remembered(userId)];
 }
 
 /** Creates a studio, with the user as its owner; or says why it could not. */

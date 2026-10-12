@@ -9,7 +9,7 @@
     choose,
     createStudio,
     forget,
-    remembered,
+    preferredFor,
     select,
     workspace,
     type Workspace,
@@ -30,9 +30,9 @@
   const ROLES = { owner: "role.owner", admin: "role.admin", member: "role.member" } as const;
 
   $effect.pre(() => {
-    const preferred = [workspace.current?.id ?? null, remembered(data.user.id)];
-    const chosen = choose(workspaces, preferred);
-    if (chosen && chosen.id !== workspace.current?.id) select(chosen, data.user.id);
+    const chosen = choose(workspaces, preferredFor(data.user.id));
+    // Also when only the details changed (a new role or name): keep the fresh object.
+    if (chosen && chosen !== workspace.current) select(chosen, data.user.id);
   });
 
   function label(w: Workspace): string {
@@ -75,8 +75,8 @@
       error = errorKey(undefined);
       return;
     }
-    forget();
     await goto(resolve("/signin"));
+    forget(); // after leaving the page, so it cannot choose again in between
   }
 </script>
 
