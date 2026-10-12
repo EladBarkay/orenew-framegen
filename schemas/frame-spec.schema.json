@@ -571,7 +571,7 @@
             }
           ],
           "default": null,
-          "description": "Corner radius for 'rounded', as a share of the shorter side.",
+          "description": "Corner radius for 'rounded', as a share of the window's own shorter side: 0.5 makes the short sides fully round.",
           "title": "Radius"
         },
         "shape": {

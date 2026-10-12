@@ -1,12 +1,12 @@
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, get_args
 
 import pytest
 
 from framegen.spec import FrameSpec, SpecInvalid, read_spec
 from framegen.spec import schema as spec_schema
-from framegen.spec.models import Bar, Piece, Stroke
+from framegen.spec.models import ANCHOR_POINTS, Anchor, Bar, Piece, Stroke
 
 PIECE = "pc_" + "a2" * 13
 MASK = "ast_" + "b3" * 13
@@ -155,6 +155,8 @@ def test_every_problem_is_reported_at_once() -> None:
         (["decoration", "layers", 3, "size"], 0, "greater_than"),
         (["decoration", "layers", 3, "mirror"], "both", "literal_error"),
         (["decoration", "layers", 3, "offset", "x"], 2, "less_than_equal"),
+        (["decoration", "layers", 3, "offset"], {"x": -0.1, "y": 0}, "spec_outside_frame"),
+        (["decoration", "layers", 3, "offset"], {"x": 0, "y": 0.2}, "spec_outside_frame"),
         (["decoration", "layers"], DELETE, "missing"),
         (["decoration", "layers"], [{"kind": "piece"}] * 65, "too_long"),
     ],
@@ -250,3 +252,7 @@ def test_field_names_that_look_like_tags_stay_in_the_path() -> None:
     assert (("decoration", "layers", 3, "shape"), "extra_forbidden") in found
     piece_id = with_change(["decoration", "layers", 3, "piece"], "pc_x")
     assert problems(piece_id) == [(("decoration", "layers", 3, "piece"), "string_pattern_mismatch")]
+
+
+def test_every_anchor_has_a_point() -> None:
+    assert set(ANCHOR_POINTS) == set(get_args(Anchor))

@@ -105,7 +105,9 @@ class Window(SpecModel):
 
     shape: Literal["rectangle", "rounded", "arch", "oval", "mask"]
     radius: Annotated[float, Field(ge=0, le=0.5, allow_inf_nan=False)] | None = Field(
-        default=None, description="Corner radius for 'rounded', as a share of the shorter side."
+        default=None,
+        description="Corner radius for 'rounded', as a share of the window's own shorter "
+        "side: 0.5 makes the short sides fully round.",
     )
     mask: str | None = Field(
         default=None,
@@ -129,6 +131,13 @@ class Window(SpecModel):
 
 
 Edge = Literal["top", "bottom", "start", "end"]
+
+ANCHOR_POINTS: dict[str, tuple[float, float]] = {
+    "top-start": (0, 0), "top": (0.5, 0), "top-end": (1, 0),
+    "start": (0, 0.5), "center": (0.5, 0.5), "end": (1, 0.5),
+    "bottom-start": (0, 1), "bottom": (0.5, 1), "bottom-end": (1, 1),
+}  # fmt: skip
+"""Where each anchor is, as (inline, block) fractions from the top-start corner."""
 Anchor = Literal[
     "top-start", "top", "top-end", "start", "center", "end", "bottom-start", "bottom", "bottom-end"
 ]
@@ -230,6 +239,17 @@ class Piece(SpecModel):
     offset: Offset = Offset()
     rotate: Rotation = 0
     mirror: Literal["none", "inline", "block"] = "none"
+
+    @model_validator(mode="after")
+    def _anchor_inside(self) -> Self:
+        x = ANCHOR_POINTS[self.anchor][0] + self.offset.x
+        y = ANCHOR_POINTS[self.anchor][1] + self.offset.y
+        if not (-TOLERANCE <= x <= 1 + TOLERANCE and -TOLERANCE <= y <= 1 + TOLERANCE):
+            raise PydanticCustomError(
+                "spec_outside_frame", "The offset moves the piece's anchor outside the frame."
+            )
+        return self
+
     overlaps_window: bool = Field(
         default=False,
         description="Whether the piece may cover the window's edge (DESIGN.md 4.4). If not, "
