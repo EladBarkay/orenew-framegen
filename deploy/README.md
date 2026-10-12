@@ -34,7 +34,20 @@ docker compose -f deploy/compose.yaml exec api python -c \
 - Stop: `docker compose -f deploy/compose.yaml down`. Data is kept in the
   `postgres-data` and `storage-data` volumes and is there on the next start.
 - Start from empty: `docker compose -f deploy/compose.yaml down --volumes`.
-- Ports are bound to `127.0.0.1` only.
+- Ports are bound to `127.0.0.1` only. If one is already taken on your machine (another
+  Postgres on 5432, say), choose others with these variables, for example
+  `FRAMEGEN_POSTGRES_PORT=15432 docker compose -f deploy/compose.yaml up --wait`, or put
+  them in a `.env` file next to `compose.yaml`:
+
+  | Variable | Default | Port of |
+  |---|---|---|
+  | `FRAMEGEN_WEB_PORT` | 8080 | the site (`web`) |
+  | `FRAMEGEN_POSTGRES_PORT` | 5432 | `postgres`, for database tools |
+  | `FRAMEGEN_STORAGE_PORT` | 9000 | `storage`, for S3 tools |
+
+  The services reach each other inside Compose, so these change only what your machine
+  sees. When you change `FRAMEGEN_WEB_PORT`, the pre-signed links follow it, unless
+  `FRAMEGEN_PUBLIC_URL` is set.
 
 Files are uploaded and downloaded straight to and from the storage with pre-signed links
 (`DESIGN.md` section 6.2). The links point at the site itself (`FRAMEGEN_PUBLIC_URL`,

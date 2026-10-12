@@ -17,7 +17,7 @@ x-backend-environment: &backend-environment
   FRAMEGEN_S3_ACCESS_KEY: ${FRAMEGEN_S3_ACCESS_KEY:-framegen}
   FRAMEGEN_S3_SECRET_KEY: ${FRAMEGEN_S3_SECRET_KEY:-framegen-dev-secret}
   # Where browsers reach the storage: the site itself, through Caddy (web/Caddyfile).
-  FRAMEGEN_S3_PUBLIC_URL: ${FRAMEGEN_PUBLIC_URL:-http://localhost:8080}
+  FRAMEGEN_S3_PUBLIC_URL: ${FRAMEGEN_PUBLIC_URL:-http://localhost:${FRAMEGEN_WEB_PORT:-8080}}
 
 # The backend image is built once, by the api service; storage-init and worker reuse it.
 x-backend-image: &backend-image
@@ -34,7 +34,7 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
     ports:
-      - 127.0.0.1:5432:5432
+      - 127.0.0.1:${FRAMEGEN_POSTGRES_PORT:-5432}:5432
     healthcheck:
       # Over TCP: the socket also answers during first-start initialisation, before the real
       # server is listening for other containers.
@@ -54,7 +54,7 @@ services:
     volumes:
       - storage-data:/data
     ports:
-      - 127.0.0.1:9000:9000
+      - 127.0.0.1:${FRAMEGEN_STORAGE_PORT:-9000}:9000
     healthcheck:
       test: [CMD-SHELL, curl -fsS http://localhost:9000/health || exit 1]
       interval: 2s
@@ -149,7 +149,7 @@ services:
       FRAMEGEN_SITE_ADDRESS: ${FRAMEGEN_SITE_ADDRESS:-:80}
       FRAMEGEN_S3_BUCKET: ${FRAMEGEN_S3_BUCKET:-framegen}
     ports:
-      - 127.0.0.1:8080:80
+      - 127.0.0.1:${FRAMEGEN_WEB_PORT:-8080}:80
     volumes:
       # Caddy keeps its HTTPS certificates here (production, T-56).
       - caddy-data:/data
