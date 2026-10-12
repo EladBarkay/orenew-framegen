@@ -144,10 +144,20 @@ Anchor = Literal[
 Thickness = Annotated[float, Field(gt=0, le=0.5, allow_inf_nan=False)]
 
 
-class Stroke(SpecModel):
+class LayerBase(SpecModel):
+    overlaps_window: bool = Field(
+        default=False,
+        description="Whether the layer may cover the photo window (DESIGN.md 4.4), as a "
+        "caption bar over the photo or a flower over its corner does. If not, the window "
+        "is cut through it.",
+    )
+
+
+class Stroke(LayerBase):
     """A line around the window, or along the frame's outer edge. `offset` is the gap
-    to what it surrounds: outwards from the window, inwards from the frame's edge. A
-    window stroke that reaches past the frame is clipped there."""
+    to what it surrounds: outwards from the window, inwards from the frame's edge. Width
+    and offset are shares of the frame's shorter side. A window stroke that reaches past
+    the frame is clipped there."""
 
     kind: Literal["vector"]
     shape: Literal["stroke"]
@@ -164,8 +174,10 @@ class Stroke(SpecModel):
         return self
 
 
-class Band(SpecModel):
-    """A solid strip flush with one edge of the frame, across its full length."""
+class Band(LayerBase):
+    """A solid strip flush with one edge of the frame, across its full length. Its
+    thickness is a share of the frame's size across that edge (the height, for the top
+    and bottom edges)."""
 
     kind: Literal["vector"]
     shape: Literal["band"]
@@ -175,9 +187,10 @@ class Band(SpecModel):
     opacity: Fraction = 1
 
 
-class Bar(SpecModel):
+class Bar(LayerBase):
     """A strip parallel to one edge, at a distance from it (it may cross the window's
-    edge, as in a caption bar)."""
+    edge, as in a caption bar). Distance and thickness are shares of the frame's size
+    across that edge."""
 
     kind: Literal["vector"]
     shape: Literal["bar"]
@@ -195,7 +208,8 @@ class Bar(SpecModel):
 
 
 class Box(SpecModel):
-    """A rectangle in frame fractions, from the top-start corner."""
+    """A rectangle from the frame's top-start corner: x and width are shares of the
+    frame's width, y and height of its height."""
 
     x: Fraction
     y: Fraction
@@ -209,7 +223,7 @@ class Box(SpecModel):
         return self
 
 
-class Shape(SpecModel):
+class Shape(LayerBase):
     """A filled rectangle or ellipse. It is rotated about its box's centre; parts that a
     rotation takes past the frame are clipped."""
 
@@ -222,11 +236,14 @@ class Shape(SpecModel):
 
 
 class Offset(SpecModel):
+    """A move from the anchor: x towards the end (a share of the frame's width), y
+    downwards (a share of its height)."""
+
     x: Annotated[float, Field(ge=-1, le=1, allow_inf_nan=False)] = 0
     y: Annotated[float, Field(ge=-1, le=1, allow_inf_nan=False)] = 0
 
 
-class Piece(SpecModel):
+class Piece(LayerBase):
     """A raster artwork piece (with its own transparency), placed by anchor."""
 
     kind: Literal["piece"]
@@ -249,12 +266,6 @@ class Piece(SpecModel):
                 "spec_outside_frame", "The offset moves the piece's anchor outside the frame."
             )
         return self
-
-    overlaps_window: bool = Field(
-        default=False,
-        description="Whether the piece may cover the window's edge (DESIGN.md 4.4). If not, "
-        "the window is cut through it.",
-    )
 
 
 VectorLayer = Annotated[Stroke | Band | Bar | Shape, Field(discriminator="shape")]
