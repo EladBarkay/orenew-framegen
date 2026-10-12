@@ -4,11 +4,11 @@ import { parts, t } from "./i18n.svelte.ts";
 
 describe("t", () => {
   it("fills placeholders", () => {
-    expect(t("health.up", { version: "1.2" })).toBe("API is up (version 1.2).");
+    expect(t("home.signed_in_as", { name: "Noa" })).toBe("Signed in as Noa.");
   });
 
   it("leaves a placeholder without a value visible", () => {
-    expect(t("health.up")).toBe("API is up (version {version}).");
+    expect(t("home.signed_in_as")).toBe("Signed in as {name}.");
   });
 });
 

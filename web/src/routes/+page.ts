@@ -2,4 +2,4 @@ import { requireUser } from "#lib/session.ts";
 
 import type { PageLoad } from "./$types";
 
-export const load: PageLoad = async () => ({ user: await requireUser() });
+export const load: PageLoad = async ({ url }) => ({ user: await requireUser(url) });

@@ -17,5 +17,5 @@ const MESSAGES: Record<string, MessageKey> = {
 export function errorKey(error: unknown): MessageKey {
   if (error === undefined) return "error.network";
   const code = (error as Partial<ApiErrorBody>)?.error?.code;
-  return (code && MESSAGES[code]) || "error.unknown";
+  return code && Object.hasOwn(MESSAGES, code) ? (MESSAGES[code] as MessageKey) : "error.unknown";
 }

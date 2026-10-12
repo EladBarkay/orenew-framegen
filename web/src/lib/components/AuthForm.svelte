@@ -2,8 +2,11 @@
   import { goto } from "$app/navigation";
   import { resolve } from "$app/paths";
 
+  import { page } from "$app/state";
+
   import { api } from "#lib/api.ts";
   import { errorKey } from "#lib/errors.ts";
+  import { afterSignIn } from "#lib/session.ts";
   import { parts, t, type MessageKey } from "#lib/i18n.svelte.ts";
 
   /** One form for both: signing up also asks for a name. */
@@ -22,10 +25,11 @@
     try {
       const result =
         mode === "signup"
-          ? await api.POST("/v1/auth/signup", { body: { email, password, name } })
+          ? await api.POST("/v1/auth/signup", { body: { email, password, name: name.trim() } })
           : await api.POST("/v1/auth/signin", { body: { email, password } });
-      if (result.error === undefined) {
-        await goto(resolve("/"));
+      if (result.response.ok) {
+        // eslint-disable-next-line svelte/no-navigation-without-resolve -- afterSignIn resolves
+        await goto(afterSignIn(page.url.searchParams.get("next")));
         return;
       }
       error = errorKey(result.error);
@@ -56,6 +60,7 @@
       type="password"
       required
       minlength={mode === "signup" ? 10 : undefined}
+      maxlength="200"
       autocomplete={mode === "signup" ? "new-password" : "current-password"}
     />
     {#if mode === "signup"}<small>{t("auth.password_hint")}</small>{/if}
