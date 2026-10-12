@@ -15,6 +15,7 @@ from sqlalchemy import (
     Table,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 
@@ -156,4 +157,11 @@ jobs = Table(
     CheckConstraint("status IN ('queued', 'running', 'succeeded', 'failed')", name="status"),
     CheckConstraint("progress >= 0 AND progress <= 1", name="progress"),
     Index("ix_jobs_workspace_id_id", "workspace_id", "id"),
+    # One demo job at a time per workspace, also when requests arrive together.
+    Index(
+        "uq_jobs_one_active_demo",
+        "workspace_id",
+        unique=True,
+        postgresql_where=text("type = 'demo' AND status IN ('queued', 'running')"),
+    ),
 )

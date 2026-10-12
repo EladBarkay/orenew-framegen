@@ -12,6 +12,7 @@ from typing import Annotated, Any, Literal
 from fastapi import APIRouter, Path, Request, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from framegen.api.access import MemberAccess
@@ -86,17 +87,6 @@ async def start_demo_job(
     """Start a job that only counts through its steps, for checking that jobs work in a
     deployment and for trying out a client. It uses no AI and costs nothing. A workspace
     can have one demo job at a time, so the shared queue stays free for real work."""
-    active = (
-        select(jobs.c.id)
-        .where(jobs.c.workspace_id == access.workspace_id, jobs.c.type == "demo")
-        .where(jobs.c.status.in_(("queued", "running")))
-        .limit(1)
-    )
-    async with engine.connect() as conn:
-        if (await conn.execute(active)).first() is not None:
-            raise ApiError(
-                409, "demo_job_running", "This workspace already has a demo job running."
-            )
     try:
         job_id = await start_job(
             request.app.state.queue,
@@ -106,6 +96,11 @@ async def start_demo_job(
             arguments={"steps": body.steps, "fail_with": body.fail_with},
             created_by=access.user.id,
         )
+    except IntegrityError as error:
+        # uq_jobs_one_active_demo: another demo job is queued or running.
+        raise ApiError(
+            409, "demo_job_running", "This workspace already has a demo job running."
+        ) from error
     except QueueUnavailable as error:
         raise ApiError(
             503, "queue_unavailable", "The job could not be queued.", {"job_id": error.job_id}

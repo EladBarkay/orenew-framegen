@@ -3,6 +3,7 @@
 import asyncio
 import uuid
 from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 from fastapi.testclient import TestClient
@@ -120,3 +121,13 @@ def test_a_queue_that_cannot_take_the_job(
     assert error["code"] == "queue_unavailable"
     job = client.get(f"/v1/workspaces/{workspace_id}/jobs/{error['detail']['job_id']}").json()
     assert (job["status"], job["error"]["code"]) == ("failed", "queue_unavailable")
+
+
+def test_one_demo_job_even_when_requests_arrive_together(
+    client: TestClient, settings: Settings
+) -> None:
+    workspace_id = sign_up(client)
+    path = f"/v1/workspaces/{workspace_id}/jobs/demo"
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        statuses = list(pool.map(lambda _: client.post(path, json={}).status_code, range(8)))
+    assert sorted(statuses) == [202] + [409] * 7
