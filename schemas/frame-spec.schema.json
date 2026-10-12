@@ -1,0 +1,639 @@
+{
+  "$defs": {
+    "Aspect": {
+      "additionalProperties": false,
+      "description": "The frame's proportions in each orientation; output presets give the pixel size.",
+      "properties": {
+        "landscape": {
+          "examples": [
+            "2:3",
+            "3:4"
+          ],
+          "pattern": "^[1-9][0-9]{0,3}:[1-9][0-9]{0,3}$",
+          "title": "Landscape",
+          "type": "string"
+        },
+        "portrait": {
+          "examples": [
+            "2:3",
+            "3:4"
+          ],
+          "pattern": "^[1-9][0-9]{0,3}:[1-9][0-9]{0,3}$",
+          "title": "Portrait",
+          "type": "string"
+        }
+      },
+      "required": [
+        "portrait",
+        "landscape"
+      ],
+      "title": "Aspect",
+      "type": "object"
+    },
+    "Band": {
+      "additionalProperties": false,
+      "description": "A solid strip flush with one edge of the frame, across its full length.",
+      "properties": {
+        "color": {
+          "examples": [
+            "#c9a24a",
+            "#00000080"
+          ],
+          "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$",
+          "title": "Color",
+          "type": "string"
+        },
+        "edge": {
+          "enum": [
+            "top",
+            "bottom",
+            "start",
+            "end"
+          ],
+          "title": "Edge",
+          "type": "string"
+        },
+        "kind": {
+          "const": "vector",
+          "title": "Kind",
+          "type": "string"
+        },
+        "opacity": {
+          "default": 1,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Opacity",
+          "type": "number"
+        },
+        "shape": {
+          "const": "band",
+          "title": "Shape",
+          "type": "string"
+        },
+        "thickness": {
+          "exclusiveMinimum": 0,
+          "maximum": 0.5,
+          "title": "Thickness",
+          "type": "number"
+        }
+      },
+      "required": [
+        "kind",
+        "shape",
+        "edge",
+        "thickness",
+        "color"
+      ],
+      "title": "Band",
+      "type": "object"
+    },
+    "Bar": {
+      "additionalProperties": false,
+      "description": "A strip parallel to one edge, at a distance from it (it may cross the window's\nedge, as in a caption bar).",
+      "properties": {
+        "color": {
+          "examples": [
+            "#c9a24a",
+            "#00000080"
+          ],
+          "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$",
+          "title": "Color",
+          "type": "string"
+        },
+        "distance": {
+          "description": "From the edge to the bar's near side.",
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Distance",
+          "type": "number"
+        },
+        "edge": {
+          "enum": [
+            "top",
+            "bottom",
+            "start",
+            "end"
+          ],
+          "title": "Edge",
+          "type": "string"
+        },
+        "kind": {
+          "const": "vector",
+          "title": "Kind",
+          "type": "string"
+        },
+        "opacity": {
+          "default": 1,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Opacity",
+          "type": "number"
+        },
+        "shape": {
+          "const": "bar",
+          "title": "Shape",
+          "type": "string"
+        },
+        "thickness": {
+          "exclusiveMinimum": 0,
+          "maximum": 0.5,
+          "title": "Thickness",
+          "type": "number"
+        }
+      },
+      "required": [
+        "kind",
+        "shape",
+        "edge",
+        "distance",
+        "thickness",
+        "color"
+      ],
+      "title": "Bar",
+      "type": "object"
+    },
+    "Box": {
+      "additionalProperties": false,
+      "description": "A rectangle in frame fractions, from the top-start corner.",
+      "properties": {
+        "height": {
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "title": "Height",
+          "type": "number"
+        },
+        "width": {
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "title": "Width",
+          "type": "number"
+        },
+        "x": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Y",
+          "type": "number"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "width",
+        "height"
+      ],
+      "title": "Box",
+      "type": "object"
+    },
+    "Decoration": {
+      "additionalProperties": false,
+      "properties": {
+        "archetype": {
+          "enum": [
+            "stroke",
+            "bar",
+            "corners",
+            "surround",
+            "scatter",
+            "template"
+          ],
+          "title": "Archetype",
+          "type": "string"
+        },
+        "layers": {
+          "description": "Drawn in order: the first is at the bottom.",
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "piece": "#/$defs/Piece",
+                "vector": {
+                  "discriminator": {
+                    "mapping": {
+                      "band": "#/$defs/Band",
+                      "bar": "#/$defs/Bar",
+                      "ellipse": "#/$defs/Shape",
+                      "rectangle": "#/$defs/Shape",
+                      "stroke": "#/$defs/Stroke"
+                    },
+                    "propertyName": "shape"
+                  },
+                  "oneOf": [
+                    {
+                      "$ref": "#/$defs/Stroke"
+                    },
+                    {
+                      "$ref": "#/$defs/Band"
+                    },
+                    {
+                      "$ref": "#/$defs/Bar"
+                    },
+                    {
+                      "$ref": "#/$defs/Shape"
+                    }
+                  ]
+                }
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "band": "#/$defs/Band",
+                    "bar": "#/$defs/Bar",
+                    "ellipse": "#/$defs/Shape",
+                    "rectangle": "#/$defs/Shape",
+                    "stroke": "#/$defs/Stroke"
+                  },
+                  "propertyName": "shape"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/Stroke"
+                  },
+                  {
+                    "$ref": "#/$defs/Band"
+                  },
+                  {
+                    "$ref": "#/$defs/Bar"
+                  },
+                  {
+                    "$ref": "#/$defs/Shape"
+                  }
+                ]
+              },
+              {
+                "$ref": "#/$defs/Piece"
+              }
+            ]
+          },
+          "maxItems": 64,
+          "title": "Layers",
+          "type": "array"
+        }
+      },
+      "required": [
+        "archetype",
+        "layers"
+      ],
+      "title": "Decoration",
+      "type": "object"
+    },
+    "Insets": {
+      "additionalProperties": false,
+      "description": "Distances from the frame's edges to the window. `start` and `end` follow the\nreading direction (start is the right side in Hebrew).",
+      "properties": {
+        "bottom": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Bottom",
+          "type": "number"
+        },
+        "end": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "End",
+          "type": "number"
+        },
+        "start": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Start",
+          "type": "number"
+        },
+        "top": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Top",
+          "type": "number"
+        }
+      },
+      "required": [
+        "top",
+        "bottom",
+        "start",
+        "end"
+      ],
+      "title": "Insets",
+      "type": "object"
+    },
+    "Offset": {
+      "additionalProperties": false,
+      "properties": {
+        "x": {
+          "default": 0,
+          "maximum": 1,
+          "minimum": -1,
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "default": 0,
+          "maximum": 1,
+          "minimum": -1,
+          "title": "Y",
+          "type": "number"
+        }
+      },
+      "title": "Offset",
+      "type": "object"
+    },
+    "Piece": {
+      "additionalProperties": false,
+      "description": "A raster artwork piece (with its own transparency), placed by anchor.",
+      "properties": {
+        "anchor": {
+          "enum": [
+            "top-start",
+            "top",
+            "top-end",
+            "start",
+            "center",
+            "end",
+            "bottom-start",
+            "bottom",
+            "bottom-end"
+          ],
+          "title": "Anchor",
+          "type": "string"
+        },
+        "kind": {
+          "const": "piece",
+          "title": "Kind",
+          "type": "string"
+        },
+        "mirror": {
+          "default": "none",
+          "enum": [
+            "none",
+            "inline",
+            "block"
+          ],
+          "title": "Mirror",
+          "type": "string"
+        },
+        "offset": {
+          "$ref": "#/$defs/Offset",
+          "default": {
+            "x": 0.0,
+            "y": 0.0
+          }
+        },
+        "overlapsWindow": {
+          "default": false,
+          "description": "Whether the piece may cover the window's edge (DESIGN.md 4.4). If not, the window is cut through it.",
+          "title": "Overlapswindow",
+          "type": "boolean"
+        },
+        "piece": {
+          "pattern": "^pc_[0-9A-Za-z]+$",
+          "title": "Piece",
+          "type": "string"
+        },
+        "rotate": {
+          "default": 0,
+          "maximum": 180,
+          "minimum": -180,
+          "title": "Rotate",
+          "type": "number"
+        },
+        "size": {
+          "description": "The piece's longer side, as a share of the frame's shorter side.",
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "title": "Size",
+          "type": "number"
+        }
+      },
+      "required": [
+        "kind",
+        "piece",
+        "anchor",
+        "size"
+      ],
+      "title": "Piece",
+      "type": "object"
+    },
+    "Shape": {
+      "additionalProperties": false,
+      "description": "A filled rectangle or ellipse.",
+      "properties": {
+        "box": {
+          "$ref": "#/$defs/Box"
+        },
+        "color": {
+          "examples": [
+            "#c9a24a",
+            "#00000080"
+          ],
+          "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$",
+          "title": "Color",
+          "type": "string"
+        },
+        "kind": {
+          "const": "vector",
+          "title": "Kind",
+          "type": "string"
+        },
+        "opacity": {
+          "default": 1,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Opacity",
+          "type": "number"
+        },
+        "rotate": {
+          "default": 0,
+          "maximum": 180,
+          "minimum": -180,
+          "title": "Rotate",
+          "type": "number"
+        },
+        "shape": {
+          "enum": [
+            "rectangle",
+            "ellipse"
+          ],
+          "title": "Shape",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "shape",
+        "box",
+        "color"
+      ],
+      "title": "Shape",
+      "type": "object"
+    },
+    "Stroke": {
+      "additionalProperties": false,
+      "description": "A line around the window or along the frame's outer edge.",
+      "properties": {
+        "around": {
+          "default": "window",
+          "enum": [
+            "window",
+            "frame"
+          ],
+          "title": "Around",
+          "type": "string"
+        },
+        "color": {
+          "examples": [
+            "#c9a24a",
+            "#00000080"
+          ],
+          "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$",
+          "title": "Color",
+          "type": "string"
+        },
+        "kind": {
+          "const": "vector",
+          "title": "Kind",
+          "type": "string"
+        },
+        "offset": {
+          "default": 0,
+          "description": "Gap between the line and what it surrounds.",
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Offset",
+          "type": "number"
+        },
+        "opacity": {
+          "default": 1,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Opacity",
+          "type": "number"
+        },
+        "shape": {
+          "const": "stroke",
+          "title": "Shape",
+          "type": "string"
+        },
+        "width": {
+          "exclusiveMinimum": 0,
+          "maximum": 0.1,
+          "title": "Width",
+          "type": "number"
+        }
+      },
+      "required": [
+        "kind",
+        "shape",
+        "width",
+        "color"
+      ],
+      "title": "Stroke",
+      "type": "object"
+    },
+    "Window": {
+      "additionalProperties": false,
+      "description": "The one photo window. It is cut after every layer is drawn, so it is always fully\ntransparent (alpha 0) except where a layer is allowed to overlap it.",
+      "properties": {
+        "landscape": {
+          "$ref": "#/$defs/WindowPlacement"
+        },
+        "mask": {
+          "anyOf": [
+            {
+              "pattern": "^ast_[0-9A-Za-z]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "For 'mask': the asset whose alpha is the window's shape.",
+          "title": "Mask"
+        },
+        "portrait": {
+          "$ref": "#/$defs/WindowPlacement"
+        },
+        "radius": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Corner radius for 'rounded', as a share of the shorter side.",
+          "title": "Radius"
+        },
+        "shape": {
+          "enum": [
+            "rectangle",
+            "rounded",
+            "arch",
+            "oval",
+            "mask"
+          ],
+          "title": "Shape",
+          "type": "string"
+        }
+      },
+      "required": [
+        "shape",
+        "portrait",
+        "landscape"
+      ],
+      "title": "Window",
+      "type": "object"
+    },
+    "WindowPlacement": {
+      "additionalProperties": false,
+      "properties": {
+        "inset": {
+          "$ref": "#/$defs/Insets"
+        }
+      },
+      "required": [
+        "inset"
+      ],
+      "title": "WindowPlacement",
+      "type": "object"
+    }
+  },
+  "$id": "https://github.com/EladBarkay/orenew-framegen/schemas/frame-spec.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "One frame design. Headline, date and stamp are added in T-11b.",
+  "properties": {
+    "aspect": {
+      "$ref": "#/$defs/Aspect"
+    },
+    "decoration": {
+      "$ref": "#/$defs/Decoration"
+    },
+    "specVersion": {
+      "const": 1,
+      "title": "Specversion",
+      "type": "integer"
+    },
+    "window": {
+      "$ref": "#/$defs/Window"
+    }
+  },
+  "required": [
+    "specVersion",
+    "aspect",
+    "window",
+    "decoration"
+  ],
+  "title": "FrameSpec",
+  "type": "object"
+}

@@ -22,6 +22,7 @@ framegen-worker = "framegen.worker.main:main"
 framegen-openapi = "framegen.api.openapi:main"
 framegen-storage-init = "framegen.storage.setup:main"
 framegen-migrate = "framegen.db.migrate:main"
+framegen-spec-schema = "framegen.spec.schema:main"
 
 [dependency-groups]
 dev = [
