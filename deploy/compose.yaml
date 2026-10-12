@@ -2,7 +2,7 @@
 #
 #   docker compose -f deploy/compose.yaml up --build
 #
-# Open http://localhost:8080. The defaults below are for a developer's own machine only.
+# Open http://localhost:8080 (FRAMEGEN_WEB_PORT; see deploy/README.md). The defaults below are for a developer's own machine only.
 # Production (T-56) layers its own settings and secrets on top of this file.
 
 name: framegen
