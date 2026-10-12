@@ -54,6 +54,13 @@ class JobEvents:
         for event in self._waiting.get(job_id, ()):
             event.set()
 
+    def _wake_all(self) -> None:
+        """When listening starts or stops, every stream re-reads its job: changes may
+        have been missed meanwhile, and their re-read pace changes."""
+        for waiting in self._waiting.values():
+            for event in waiting:
+                event.set()
+
     async def _listen(self) -> None:
         pause = 1.0
         while True:
@@ -72,6 +79,7 @@ class JobEvents:
                     await conn.execute(f"LISTEN {JOB_EVENTS}")
                     pause = 1.0
                     self.listening = True
+                    self._wake_all()
                     async for note in conn.notifies():
                         self._wake(note.payload)
             except asyncio.CancelledError:
@@ -79,7 +87,9 @@ class JobEvents:
             except Exception as error:
                 log.warning("job events: %s; listening again in %.0f s", error, pause)
             finally:
-                self.listening = False
+                if self.listening:
+                    self.listening = False
+                    self._wake_all()
             await asyncio.sleep(pause)
             pause = min(pause * 2, 30.0)
 

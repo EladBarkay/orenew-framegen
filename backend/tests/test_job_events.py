@@ -142,3 +142,26 @@ def test_events_are_numbered(client: TestClient, server: str, settings: Settings
     worker.join()
     assert ids == [f"id: {n}" for n in range(1, len(ids) + 1)]
     assert len(ids) >= 2
+
+
+def test_a_stream_ends_when_its_session_is_signed_out(
+    client: TestClient, server: str, settings: Settings
+) -> None:
+    workspace_id = sign_up(client)
+    job = client.post(f"/v1/workspaces/{workspace_id}/jobs/demo", json={"steps": 20}).json()
+    cookie = f"{SESSION_COOKIE}={client.cookies.get(SESSION_COOKIE)}"
+    request = urllib.request.Request(
+        f"{server}/v1/workspaces/{workspace_id}/jobs/{job['id']}/events",
+        headers={"Cookie": cookie},
+    )
+    worker = threading.Thread(target=lambda: asyncio.run(run_worker(settings, wait=False)))
+    statuses = []
+    with urllib.request.urlopen(request, timeout=30) as response:
+        worker.start()
+        for raw in response:
+            if raw.startswith(b"data: "):
+                statuses.append(json.loads(raw.removeprefix(b"data: "))["status"])
+                if len(statuses) == 2:
+                    client.post("/v1/auth/signout")
+    worker.join()
+    assert "succeeded" not in statuses  # the stream ended before the job did

@@ -9,7 +9,7 @@ reads ``getJobEvents``, a stream of server-sent events that ends with the job.
 import logging
 import time
 from collections.abc import AsyncIterator
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Path, Request, Response, status
@@ -20,9 +20,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from framegen.api.access import MemberAccess
-from framegen.api.auth import Engine
+from framegen.api.auth import SESSION_COOKIE, Engine, token_hash
 from framegen.api.errors import ApiError
-from framegen.db.tables import jobs
+from framegen.db.tables import jobs, memberships, sessions
 from framegen.jobs.listener import JobEvents
 from framegen.jobs.queue import QueueUnavailable, start_job
 
@@ -164,11 +164,19 @@ async def get_job_events(
     if first.status in FINISHED and "last-event-id" in request.headers:
         return Response(status_code=status.HTTP_204_NO_CONTENT)
     events: JobEvents = request.app.state.job_events
+    token = request.cookies.get(SESSION_COOKIE, "")
 
     async def stream() -> AsyncIterator[str]:
         started = quiet_since = time.monotonic()
-        job, sent, number = first, "", 0
+        sent, number = "", 0
         async with events.follow(job_id) as changes:
+            # Read again now that changes are being followed: one made since `first` was
+            # read would otherwise only be seen at the next re-read.
+            try:
+                job = await find_job(engine, access.workspace_id, job_id)
+            except Exception:
+                log.warning("job %s: stream ended early", job_id, exc_info=True)
+                return
             while True:
                 data = job.model_dump_json()
                 if data != sent:
@@ -180,10 +188,11 @@ async def get_job_events(
                     quiet_since = time.monotonic()
                 if job.status in FINISHED or time.monotonic() - started >= MAX_STREAM_SECONDS:
                     return
-                await changes.wait(
-                    RECHECK_LISTENING_SECONDS if events.listening else RECHECK_SECONDS
-                )
+                recheck = RECHECK_LISTENING_SECONDS if events.listening else RECHECK_SECONDS
+                await changes.wait(min(recheck, KEEP_ALIVE_SECONDS))
                 try:
+                    if not await _still_allowed(engine, token, access.user.id, access.workspace_id):
+                        return  # signed out, or no longer a member
                     job = await find_job(engine, access.workspace_id, job_id)
                 except Exception:
                     # Gone (its workspace was deleted) or the database is unreachable: end
@@ -197,3 +206,17 @@ async def get_job_events(
         # No caching, and no buffering in proxies: each event goes out at once.
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+async def _still_allowed(engine: AsyncEngine, token: str, user_id: str, workspace_id: str) -> bool:
+    """Whether the stream's session is still valid and its user still a member."""
+    query = (
+        select(memberships.c.user_id)
+        .join(sessions, sessions.c.user_id == memberships.c.user_id)
+        .where(memberships.c.workspace_id == workspace_id, memberships.c.user_id == user_id)
+        .where(
+            sessions.c.token_hash == token_hash(token), sessions.c.expires_at > datetime.now(UTC)
+        )
+    )
+    async with engine.connect() as conn:
+        return (await conn.execute(query)).first() is not None
