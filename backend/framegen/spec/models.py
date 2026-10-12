@@ -7,7 +7,7 @@ rather than a silently ignored setting.
 
 from typing import Annotated, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, model_validator
 from pydantic.alias_generators import to_camel
 from pydantic_core import PydanticCustomError
 
@@ -136,7 +136,9 @@ Thickness = Annotated[float, Field(gt=0, le=0.5, allow_inf_nan=False)]
 
 
 class Stroke(SpecModel):
-    """A line around the window or along the frame's outer edge."""
+    """A line around the window, or along the frame's outer edge. `offset` is the gap
+    to what it surrounds: outwards from the window, inwards from the frame's edge. A
+    window stroke that reaches past the frame is clipped there."""
 
     kind: Literal["vector"]
     shape: Literal["stroke"]
@@ -145,6 +147,12 @@ class Stroke(SpecModel):
     offset: Fraction = Field(default=0, description="Gap between the line and what it surrounds.")
     color: Color
     opacity: Fraction = 1
+
+    @model_validator(mode="after")
+    def _inside(self) -> Self:
+        if self.around == "frame" and self.offset + self.width > 0.5 + TOLERANCE:
+            raise PydanticCustomError("spec_outside_frame", "The stroke ends outside the frame.")
+        return self
 
 
 class Band(SpecModel):
@@ -193,7 +201,8 @@ class Box(SpecModel):
 
 
 class Shape(SpecModel):
-    """A filled rectangle or ellipse."""
+    """A filled rectangle or ellipse. It is rotated about its box's centre; parts that a
+    rotation takes past the frame are clipped."""
 
     kind: Literal["vector"]
     shape: Literal["rectangle", "ellipse"]
@@ -239,12 +248,19 @@ class Decoration(SpecModel):
     )
 
 
+def _exact_version(value: object) -> object:
+    # Literal compares by equality, and True == 1.0 == 1 in Python.
+    if type(value) is not int:
+        raise PydanticCustomError("int_type", "Input should be a valid integer")
+    return value
+
+
 class FrameSpec(SpecModel):
     """One frame design."""
 
     # The headline, date and stamp come with T-11b.
 
-    spec_version: Literal[1]
+    spec_version: Annotated[Literal[1], BeforeValidator(_exact_version)]
     aspect: Aspect
     window: Window
     decoration: Decoration

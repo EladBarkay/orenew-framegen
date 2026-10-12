@@ -41,24 +41,26 @@ def read_spec(data: Any) -> FrameSpec:
 
 
 def _json_path(data: Any, location: tuple[str | int, ...]) -> tuple[str | int, ...]:
-    """Pydantic's location as a path into the submitted JSON: a discriminated union adds
-    its tag values as steps (``layers, 0, "vector", "bar", "colour"``), which are dropped."""
+    """Pydantic's location as a path into the submitted JSON. Decoration layers are a
+    discriminated union, and Pydantic puts the tags right after a layer's index:
+    ``layers, 0, "vector", "bar", "colour"``. Those tag steps are dropped."""
     path: list[str | int] = []
     node = data
     tags: list[object] = []
     for step in location:
-        if isinstance(node, dict):
-            if step in tags:  # checked first: a piece's tag "piece" is also a field name
-                tags.remove(step)
-                continue
-            node = node.get(step) if isinstance(step, str) else None
-        elif isinstance(node, list) and isinstance(step, int) and 0 <= step < len(node):
+        if tags and step == tags[0]:
+            tags.pop(0)
+            continue
+        tags = []
+        if isinstance(node, list) and isinstance(step, int) and 0 <= step < len(node):
             node = node[step]
+            if path[-1:] == ["layers"] and isinstance(node, dict):
+                tags = [node.get("kind")]
+                if node.get("kind") == "vector":
+                    tags.append(node.get("shape"))
+        elif isinstance(node, dict) and isinstance(step, str):
+            node = node.get(step)
         else:
             node = None
         path.append(step)
-        # Only decoration layers are union members, and they always have a kind.
-        tags = (
-            [node["kind"], node.get("shape")] if isinstance(node, dict) and "kind" in node else []
-        )
     return tuple(path)

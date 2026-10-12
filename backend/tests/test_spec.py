@@ -146,6 +146,7 @@ def test_every_problem_is_reported_at_once() -> None:
         (["decoration", "layers", 0, "edge"], "left", "literal_error"),
         (["decoration", "layers", 0, "color"], "#fff", "string_pattern_mismatch"),
         (["decoration", "layers", 1, "width"], 0.2, "less_than_equal"),
+        (["decoration", "layers", 1, "offset"], 0.5, "spec_outside_frame"),
         (["decoration", "layers", 1, "opacity"], 1.5, "less_than_equal"),
         (["decoration", "layers", 2, "box", "x"], 0.9, "spec_outside_frame"),
         (["decoration", "layers", 2, "rotate"], 270, "less_than_equal"),
@@ -211,6 +212,7 @@ def test_a_window_of_exactly_the_minimum_is_allowed() -> None:
         (["decoration", "layers", 1, "opacity"], "0.5"),
         (["decoration", "layers", 1, "opacity"], True),
         (["decoration", "layers", 3, "overlapsWindow"], "yes"),
+        (["specVersion"], True),
     ],
 )
 def test_values_are_not_coerced(path: list[str | int], value: Any) -> None:
@@ -236,3 +238,15 @@ def test_problem_locations_are_paths_into_the_json() -> None:
 def test_ids_have_the_real_format() -> None:
     for value in ["pc_bottle", "pc_" + "a" * 27, "pc_" + "A2" * 13, PIECE + "\n"]:
         assert problems(with_change(["decoration", "layers", 3, "piece"], value))
+
+
+def test_field_names_that_look_like_tags_stay_in_the_path() -> None:
+    offset = with_change(["decoration", "layers", 3, "offset"], {"x": "1", "kind": "x"})
+    assert (("decoration", "layers", 3, "offset", "x"), "float_type") in problems(offset)
+    stray = with_change(["decoration", "layers", 3, "shape"], "anchor")
+    stray["decoration"]["layers"][3]["anchor"] = "middle"
+    found = problems(stray)
+    assert (("decoration", "layers", 3, "anchor"), "literal_error") in found
+    assert (("decoration", "layers", 3, "shape"), "extra_forbidden") in found
+    piece_id = with_change(["decoration", "layers", 3, "piece"], "pc_x")
+    assert problems(piece_id) == [(("decoration", "layers", 3, "piece"), "string_pattern_mismatch")]

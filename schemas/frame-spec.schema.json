@@ -421,7 +421,7 @@
     },
     "Shape": {
       "additionalProperties": false,
-      "description": "A filled rectangle or ellipse.",
+      "description": "A filled rectangle or ellipse. It is rotated about its box's centre; parts that a\nrotation takes past the frame are clipped.",
       "properties": {
         "box": {
           "$ref": "#/$defs/Box"
@@ -474,7 +474,7 @@
     },
     "Stroke": {
       "additionalProperties": false,
-      "description": "A line around the window or along the frame's outer edge.",
+      "description": "A line around the window, or along the frame's outer edge. `offset` is the gap\nto what it surrounds: outwards from the window, inwards from the frame's edge. A\nwindow stroke that reaches past the frame is clipped there.",
       "properties": {
         "around": {
           "default": "window",
@@ -611,7 +611,7 @@
   "$id": "https://github.com/EladBarkay/orenew-framegen/schemas/frame-spec.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "One frame design. This schema checks each field. FrameGen also checks rules across fields that it cannot express (the window keeps at least 20% of the frame, shapes stay inside the frame, portrait is not wider than tall, a radius only for 'rounded' and a mask only for 'mask').",
+  "description": "One frame design. This schema checks each field. FrameGen also checks rules across fields that it cannot express (the window keeps at least 20% of the frame, bars, boxes and frame strokes stay inside the frame, portrait is not wider than tall, a radius only for 'rounded' and a mask only for 'mask').",
   "properties": {
     "aspect": {
       "$ref": "#/$defs/Aspect"
