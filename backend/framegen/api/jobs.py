@@ -189,7 +189,9 @@ async def get_job_events(
                 if job.status in FINISHED or time.monotonic() - started >= MAX_STREAM_SECONDS:
                     return
                 recheck = RECHECK_LISTENING_SECONDS if events.listening else RECHECK_SECONDS
-                await changes.wait(min(recheck, KEEP_ALIVE_SECONDS))
+                # Wake by the time the next keep-alive is due, counted from the last write.
+                due = KEEP_ALIVE_SECONDS - (time.monotonic() - quiet_since)
+                await changes.wait(max(0.0, min(recheck, due)))
                 try:
                     if not await _still_allowed(engine, token, access.user.id, access.workspace_id):
                         return  # signed out, or no longer a member
