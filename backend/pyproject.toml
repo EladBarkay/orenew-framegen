@@ -10,6 +10,7 @@ dependencies = [
     "boto3>=1.43.111",
     "fastapi>=0.143.0",
     "pillow>=12.0.0",
+    "procrastinate[psycopg]==3.10.0",
     "psycopg[binary]>=3.3.6",
     "pydantic-settings>=2.15.0",
     "sqlalchemy[asyncio]>=2.1.4",

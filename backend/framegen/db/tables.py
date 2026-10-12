@@ -5,6 +5,7 @@ from sqlalchemy import (
     CheckConstraint,
     Column,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -131,4 +132,28 @@ assets = Table(
     Column("completed_at", DateTime(timezone=True), nullable=True),
     CheckConstraint("status IN ('pending', 'ready', 'rejected')", name="status"),
     Index("ix_assets_workspace_id_id", "workspace_id", "id"),
+)
+
+jobs = Table(
+    "jobs",
+    metadata,
+    Column("id", ID, primary_key=True),
+    Column("workspace_id", ID, ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False),
+    # What the job does, such as demo; one Procrastinate task per type.
+    Column("type", String(64), nullable=False),
+    Column("status", String(16), nullable=False),
+    # 0 to 1, and a short English note on the current step, for developers.
+    Column("progress", Float, nullable=False, server_default="0"),
+    Column("step", String(200), nullable=True),
+    Column("result", JSONB, nullable=True),
+    # A stable code for programs (as in API errors) and an English hint.
+    Column("error_code", String(64), nullable=True),
+    Column("error_message", String(500), nullable=True),
+    Column("created_by", ID, ForeignKey("users.id", ondelete="SET NULL"), nullable=True),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("started_at", DateTime(timezone=True), nullable=True),
+    Column("finished_at", DateTime(timezone=True), nullable=True),
+    CheckConstraint("status IN ('queued', 'running', 'succeeded', 'failed')", name="status"),
+    CheckConstraint("progress >= 0 AND progress <= 1", name="progress"),
+    Index("ix_jobs_workspace_id_id", "workspace_id", "id"),
 )

@@ -114,6 +114,8 @@ services:
     <<: *backend-image
     environment: *backend-environment
     command: [framegen-worker]
+    # Longer than the worker's own drain (STOP_GRACE, 30 s), so running jobs can finish.
+    stop_grace_period: 45s
     depends_on:
       postgres:
         condition: service_healthy
