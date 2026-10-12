@@ -97,6 +97,7 @@ def server() -> Iterator[HTTPServer]:
     thread.start()
     yield httpd
     httpd.shutdown()
+    httpd.server_close()
 
 
 def test_nothing_is_loaded_from_the_network(server: HTTPServer) -> None:
