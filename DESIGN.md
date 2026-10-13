@@ -185,6 +185,10 @@ side by side.
   script, right-to-left text, mixed Hebrew/English and ligatures work correctly.
 - Fonts: a curated set of open-licence fonts per script (Hebrew and Latin first), plus
   the workspace's uploaded fonts, which are used only inside that workspace.
+  The built-in set is in `backend/framegen/fonts` (Google Fonts, OFL, kept unmodified),
+  with stand-ins for the commercial fonts the owner's frames use (`attachments/README.md`).
+  The renderer embeds the font files in the SVG, so Chromium never picks a font the
+  machine happens to have for text the font covers.
 - **Dates:** stored as one calendar date plus `afterSunset`. Each format renders it in
   a calendar:
   - Gregorian through `Intl.DateTimeFormat` patterns or styles, in any locale.

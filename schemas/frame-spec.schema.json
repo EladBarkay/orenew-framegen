@@ -275,7 +275,7 @@
           "type": "string"
         },
         "font": {
-          "description": "A workspace font (font_…) or a built-in font by name (heebo, suez-one).",
+          "description": "A workspace font (font_…) or a built-in font by name: heebo-light, heebo, heebo-medium, heebo-bold, heebo-extrabold, heebo-black, rubik, rubik-bold, varela-round, secular-one, frank-ruhl-libre, frank-ruhl-libre-bold, david-libre, david-libre-bold, bellefair, suez-one, karantina, karantina-bold, amatic-sc, amatic-sc-bold, playpen-sans-hebrew, playpen-sans-hebrew-bold, playfair-display, playfair-display-bold, great-vibes.",
           "examples": [
             "heebo",
             "amatic-sc-bold"
@@ -549,7 +549,7 @@
           "type": "string"
         },
         "font": {
-          "description": "A workspace font (font_…) or a built-in font by name (heebo, suez-one).",
+          "description": "A workspace font (font_…) or a built-in font by name: heebo-light, heebo, heebo-medium, heebo-bold, heebo-extrabold, heebo-black, rubik, rubik-bold, varela-round, secular-one, frank-ruhl-libre, frank-ruhl-libre-bold, david-libre, david-libre-bold, bellefair, suez-one, karantina, karantina-bold, amatic-sc, amatic-sc-bold, playpen-sans-hebrew, playpen-sans-hebrew-bold, playfair-display, playfair-display-bold, great-vibes.",
           "examples": [
             "heebo",
             "amatic-sc-bold"
@@ -1016,7 +1016,7 @@
           "type": "string"
         },
         "font": {
-          "description": "A workspace font (font_…) or a built-in font by name (heebo, suez-one).",
+          "description": "A workspace font (font_…) or a built-in font by name: heebo-light, heebo, heebo-medium, heebo-bold, heebo-extrabold, heebo-black, rubik, rubik-bold, varela-round, secular-one, frank-ruhl-libre, frank-ruhl-libre-bold, david-libre, david-libre-bold, bellefair, suez-one, karantina, karantina-bold, amatic-sc, amatic-sc-bold, playpen-sans-hebrew, playpen-sans-hebrew-bold, playfair-display, playfair-display-bold, great-vibes.",
           "examples": [
             "heebo",
             "amatic-sc-bold"

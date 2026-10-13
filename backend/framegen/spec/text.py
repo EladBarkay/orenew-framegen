@@ -9,9 +9,10 @@ import re
 import unicodedata
 from typing import Annotated, Literal, Self
 
-from pydantic import BeforeValidator, Discriminator, Field, Tag, model_validator
+from pydantic import AfterValidator, BeforeValidator, Discriminator, Field, Tag, model_validator
 from pydantic_core import PydanticCustomError
 
+from framegen.fonts import BUILT_IN
 from framegen.spec.models import Color, Fraction, SpecModel
 
 Slot = Literal[
@@ -54,14 +55,25 @@ def slot_in(placement: Placement, orientation: Orientation) -> Slot:
     return placement
 
 
+def _known_font(value: str) -> str:
+    if not value.startswith("font_") and value not in BUILT_IN:
+        raise PydanticCustomError(
+            "spec_font_unknown", "There is no built-in font named '{name}'.", {"name": value}
+        )
+    return value
+
+
 FontRef = Annotated[
     str,
     Field(
         pattern=r"^(font_[a-z2-7]{26}|[a-z0-9]+(-[a-z0-9]+)*)$",
         max_length=40,
-        description="A workspace font (font_…) or a built-in font by name (heebo, suez-one).",
+        description="A workspace font (font_…) or a built-in font by name: "
+        + ", ".join(BUILT_IN)
+        + ".",
         examples=["heebo", "amatic-sc-bold"],
     ),
+    AfterValidator(_known_font),
 ]
 
 _CONTROL = re.compile(

@@ -36,7 +36,7 @@ def alpha(png: bytes) -> Image.Image:
     return image.getchannel("A")
 
 
-def frame(shape: str, **window: Any) -> str:
+def frame(shape: str, headline: dict[str, Any] | None = None, **window: Any) -> str:
     inset = {"top": 0.05, "bottom": 0.2, "start": 0.06, "end": 0.06}
     spec = read_spec({
         "specVersion": 1, "aspect": {"portrait": "2:3", "landscape": "3:2"},
@@ -45,6 +45,7 @@ def frame(shape: str, **window: Any) -> str:
         "decoration": {"archetype": "surround", "layers": [
             {"kind": "vector", "shape": "rectangle", "color": "#336699",
              "box": {"x": 0, "y": 0, "width": 1, "height": 1}}]},
+        **({"headline": headline} if headline else {}),
     })  # fmt: skip
     return render_svg(spec, "portrait", 600, 900)
 
@@ -142,3 +143,33 @@ def test_a_closed_rasteriser_refuses_frames() -> None:
 
     with pytest.raises(RuntimeError, match="async with"):
         asyncio.run(run())
+
+
+def headline(font: str, text: str = "נועה ועודד", size: float = 0.06) -> dict[str, Any]:
+    return {"text": text, "font": font, "color": "#ffffff", "size": size, "slot": "bottom-band"}
+
+
+def ink(png: bytes) -> Image.Image:
+    """The text's pixels: white on the blue decoration."""
+    image = Image.open(io.BytesIO(png)).convert("RGB")
+    return image.getchannel("R").point(lambda red: 255 if red > 0x99 else 0)
+
+
+def test_text_is_drawn_in_its_embedded_font() -> None:
+    fonts = ["heebo-light", "heebo-black", "suez-one", "unknown"]
+    svgs = [frame("rectangle", headline("heebo" if f == "unknown" else f)) for f in fonts]
+    # A family the page does not have: what Chromium would draw without the embedded font.
+    svgs[3] = svgs[3].replace('font-family="fg-heebo"', 'font-family="not-embedded"')
+    light, black, suez, fallback = [ink(png) for png in rasterise(*((s, 600, 900) for s in svgs))]
+    amounts = [sum(i.histogram()[255:]) for i in (light, black, suez, fallback)]
+    assert amounts[0] > 0
+    assert amounts[1] > 1.5 * amounts[0], "the variable font's weight is applied"
+    images = [light.tobytes(), black.tobytes(), suez.tobytes(), fallback.tobytes()]
+    assert len(set(images)) == 4
+
+
+def test_text_too_big_for_its_slot_stays_out_of_the_window() -> None:
+    (png,) = rasterise((frame("rectangle", headline("heebo-black", "נ" * 30, 0.25)), 600, 900))
+    # The window is 45 to 720 down and 36 to 564 across.
+    window = alpha(png).crop((36, 45, 564, 720))
+    assert window.getextrema() == (0, 0)

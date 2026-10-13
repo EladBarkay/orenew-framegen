@@ -140,6 +140,7 @@ BASE = ATTACHMENTS["23.9.26 wedding, bar with icons"]
         ({"headline": headline("a\x00b")}, "spec_text_control"),
         ({"headline": headline("א" * 201)}, "string_too_long"),
         ({"headline": {**headline(), "font": "../fonts/x.ttf"}}, "string_pattern_mismatch"),
+        ({"headline": {**headline(), "font": "comic-sans"}}, "spec_font_unknown"),
         ({"headline": {**headline(), "size": 0.3}}, "less_than_equal"),
         ({"headline": headline(slot="middle")}, "literal_error"),
         ({"date": date(value="23.9.2026")}, "date_type"),

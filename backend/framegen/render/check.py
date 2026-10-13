@@ -30,6 +30,8 @@ TEST_FRAME = {
              "thickness": 0.05, "color": "#ffffff", "overlapsWindow": True},
         ],
     },
+    "headline": {"text": "נועה ועודד", "font": "heebo-bold", "color": "#ffffff",
+                 "size": 0.06, "slot": "bottom-band"},
 }  # fmt: skip
 
 
@@ -47,6 +49,10 @@ def problems(png: bytes) -> list[str]:
         found.append("the window is not transparent")
     if alpha.getpixel((WIDTH // 2, round(HEIGHT * 0.725))) != 255:
         found.append("the bar over the window is missing")
+    # The headline: white pixels in the bottom band, under the window (720 down).
+    text = image.crop((0, 730, WIDTH, HEIGHT)).convert("RGB").getchannel("R")
+    if sum(text.point(lambda red: 255 if red > 0x99 else 0).histogram()[255:]) < 500:
+        found.append("the headline is missing")
     partial = sum(alpha.histogram()[1:255])
     if partial:
         found.append(f"{partial} pixels are partly transparent")
