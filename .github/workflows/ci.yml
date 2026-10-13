@@ -55,11 +55,14 @@ jobs:
         run: uv run ruff format --check .
       - name: Type check
         run: uv run mypy
-      - name: Tests (including the Postgres and storage ones)
+      - name: Chromium for the renderer tests (the version Playwright is pinned to)
+        run: uv run playwright install --with-deps --only-shell chromium
+      - name: Tests (including the Postgres, storage and Chromium ones)
         run: uv run pytest
         env:
           FRAMEGEN_TEST_POSTGRES: "1"
           FRAMEGEN_TEST_STORAGE: "1"
+          FRAMEGEN_TEST_CHROMIUM: "1"
 
   node:
     name: Web, SDK and psd-writer (Node)
@@ -121,6 +124,8 @@ jobs:
         run: deploy/smoke-upload.sh http://localhost:$FRAMEGEN_WEB_PORT
       - name: Start a demo job and follow it to the end through the public entrance
         run: deploy/smoke-job.sh http://localhost:$FRAMEGEN_WEB_PORT
+      - name: The worker renders a frame in its Chromium
+        run: docker compose -f deploy/compose.yaml exec -T worker framegen-render-check
       - name: Logs
         if: failure()
         run: docker compose -f deploy/compose.yaml logs

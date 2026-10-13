@@ -7,7 +7,7 @@ decision D2):
 |---|---|---|
 | `web` | Caddy serving the web app, forwarding `/v1` to the API and `/<bucket>/` to the storage | http://localhost:8080 ¹ |
 | `api` | FastAPI backend | through `web`, at `/v1` |
-| `worker` | Runs background jobs from the queue (Procrastinate, in Postgres) | — |
+| `worker` | Runs background jobs from the queue (Procrastinate, in Postgres), and renders frames in headless Chromium | — |
 | `psd-writer` | Internal PSD text-layer service (D8) | inside Compose only |
 | `postgres` | PostgreSQL 17 with pgvector | localhost:5432 ¹ |
 | `storage` | RustFS, S3-compatible file storage (D9) | localhost:9000 ¹ |
@@ -92,10 +92,12 @@ Pass it with a Compose override file of your own, for example:
 ```yaml
 # compose.proxy.yaml (keep it out of the repository)
 x-proxy-build: &proxy-build
-  args: { HTTPS_PROXY: http://proxy.example:3128 }
+  # Both: the worker's system packages are fetched over plain HTTP.
+  args: { HTTP_PROXY: http://proxy.example:3128, HTTPS_PROXY: http://proxy.example:3128 }
   secrets: [build_ca]
 services:
-  api: { build: *proxy-build } # builds the backend image; storage-init and worker reuse it
+  api: { build: *proxy-build } # builds the backend image; storage-init and migrate reuse it
+  worker: { build: *proxy-build } # the backend image plus Chromium
   psd-writer: { build: *proxy-build }
   web: { build: *proxy-build }
 secrets:

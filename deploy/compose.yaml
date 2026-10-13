@@ -19,7 +19,8 @@ x-backend-environment: &backend-environment
   # Where browsers reach the storage: the site itself, through Caddy (web/Caddyfile).
   FRAMEGEN_S3_PUBLIC_URL: ${FRAMEGEN_PUBLIC_URL:-http://localhost:${FRAMEGEN_WEB_PORT:-8080}}
 
-# The backend image is built once, by the api service; storage-init and worker reuse it.
+# The backend image is built once, by the api service; storage-init and migrate reuse it.
+# The worker has its own image: the same, plus Chromium to render frames.
 x-backend-image: &backend-image
   image: framegen-backend:local
   pull_policy: never
@@ -86,6 +87,7 @@ services:
     build:
       context: ..
       dockerfile: backend/Dockerfile
+      target: api
     image: framegen-backend:local
     environment: *backend-environment
     depends_on:
@@ -111,7 +113,12 @@ services:
     restart: unless-stopped
 
   worker:
-    <<: *backend-image
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
+      target: worker
+    image: framegen-worker:local
+    pull_policy: never
     environment: *backend-environment
     command: [framegen-worker]
     # Longer than the worker's own drain (STOP_GRACE, 30 s), so running jobs can finish.
