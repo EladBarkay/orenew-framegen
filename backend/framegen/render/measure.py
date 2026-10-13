@@ -2,17 +2,17 @@
 
 HarfBuzz is the shaper inside Chromium, so the widths here are the widths on the page.
 Characters a font does not have are drawn in a fallback font the SVG names and embeds
-(render.text), and measured in it (Fallback), so no machine font is left to guess.
+(render.text), and measured in it (Fallback). Characters neither has (emoji, for
+example) are drawn in whatever font the machine has, so they are counted as a square.
 """
 
-import io
 import itertools
 import unicodedata
+from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Protocol
 
 import uharfbuzz as hb
-from fontTools.ttLib import TTFont
 
 
 @dataclass(frozen=True)
@@ -37,22 +37,13 @@ class Measurer(Protocol):
 
 
 class Measure:
-    """One font file at one weight (the weight matters only to a variable font)."""
+    """One TrueType or OpenType file at one weight (the weight matters only to a
+    variable font). Optical size is left at the font's default, as the SVG asks
+    Chromium to (font-optical-sizing:none)."""
 
     def __init__(self, data: bytes, weight: int) -> None:
-        if data[:4] == b"wOF2":
-            # HarfBuzz reads TrueType and OpenType; WOFF2 is those, compressed.
-            try:
-                font = TTFont(io.BytesIO(data))
-                font.flavor = None
-                out = io.BytesIO()
-                font.save(out)
-            except Exception as error:
-                raise ValueError("the WOFF2 font file cannot be read") from error
-            data = out.getvalue()
         face = hb.Face(hb.Blob(data))
         self._upem: int = face.upem
-        self._unicodes: set[int] = set(face.unicodes)
         self._font = hb.Font(face)
         if any(axis.tag == "wght" for axis in face.axis_infos):
             # As Chromium sets it from the font-weight the SVG gives.
@@ -60,10 +51,14 @@ class Measure:
         extents = self._font.get_font_extents("ltr")
         self.line = LineBox(extents.ascender / self._upem, -extents.descender / self._upem)
 
-    def has(self, char: str) -> bool:
-        """Whether the font draws the character. Format and control characters draw
-        nothing, so they need no font."""
-        return ord(char) in self._unicodes or unicodedata.category(char) in ("Cf", "Cc")
+    def has(self, cluster: str) -> bool:
+        """Whether the font draws every character of a cluster (as the shaper maps
+        them). Format and control characters draw nothing, so they need no font."""
+        return all(
+            self._font.get_nominal_glyph(ord(char)) is not None
+            or unicodedata.category(char) in ("Cf", "Cc")
+            for char in cluster
+        )
 
     def width(self, text: str) -> float:
         """The text's advance, per pixel of font size."""
@@ -79,6 +74,9 @@ class Fallback:
     """A font with a second one for the characters it does not have, as Chromium draws
     them: each run of characters in the first font that has them."""
 
+    MISSING = 1.0
+    """The width, per pixel of font size, of a character neither font has."""
+
     def __init__(self, first: Measure, second: Measure) -> None:
         self._first = first
         self._second = second
@@ -88,10 +86,35 @@ class Fallback:
         )
 
     def width(self, text: str) -> float:
-        return sum(
-            (self._first if own else self._second).width("".join(run))
-            for own, run in itertools.groupby(text, key=self._first.has)
-        )
+        # Chromium picks a font for each whole cluster: a letter with its marks.
+        def font(cluster: str) -> Measure | None:
+            for measure in (self._first, self._second):
+                if measure.has(cluster):
+                    return measure
+            return None
+
+        total = 0.0
+        for measure, run in itertools.groupby(_clusters(text), key=font):
+            clusters = list(run)
+            if measure is None:
+                total += self.MISSING * len(clusters)
+            else:
+                total += measure.width("".join(clusters))
+        return total
+
+
+def _clusters(text: str) -> Iterator[str]:
+    """Each character with the marks and joiners that follow it."""
+    cluster = ""
+    for char in text:
+        if cluster and (unicodedata.category(char).startswith("M") or char == "\u200d"):
+            cluster += char
+        else:
+            if cluster:
+                yield cluster
+            cluster = char
+    if cluster:
+        yield cluster
 
 
 WRAP_BELOW = 0.75

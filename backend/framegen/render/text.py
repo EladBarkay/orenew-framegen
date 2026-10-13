@@ -14,29 +14,26 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
-from framegen.fonts import BUILT_IN
+from framegen.fonts import BUILT_IN, BuiltInFont
 from framegen.render.measure import Fallback, Measure, Measurer
 from framegen.spec.text import Slot
 
-FontFormat = Literal["truetype", "opentype", "woff2"]
+FontFormat = Literal["truetype", "opentype"]
 
 _SIGNATURES: dict[bytes, FontFormat] = {
     b"\x00\x01\x00\x00": "truetype",
     b"true": "truetype",
     b"OTTO": "opentype",
-    b"wOF2": "woff2",
 }
 
-_MIME: dict[FontFormat, str] = {
-    "truetype": "font/ttf",
-    "opentype": "font/otf",
-    "woff2": "font/woff2",
-}
+_MIME: dict[FontFormat, str] = {"truetype": "font/ttf", "opentype": "font/otf"}
 
 
 @dataclass(frozen=True)
 class FontFile:
-    """A workspace font as the renderer is given it: the file's bytes, as uploaded."""
+    """A workspace font as the renderer is given it: a TrueType or OpenType file. WOFF2
+    uploads are unpacked to one when they arrive (T-15), under a size limit, so the
+    renderer never decompresses what a user sent."""
 
     data: bytes
 
@@ -45,7 +42,7 @@ class FontFile:
         try:
             return _SIGNATURES[self.data[:4]]
         except KeyError:
-            raise ValueError("a font must be a TrueType, OpenType or WOFF2 file") from None
+            raise ValueError("a font must be a TrueType or OpenType file") from None
 
     def __post_init__(self) -> None:
         self.format  # noqa: B018 (checks the signature)
@@ -81,6 +78,11 @@ def _built_in(path: Path) -> tuple[FontFormat, str]:
     return file.format, base64.b64encode(file.data).decode("ascii")
 
 
+def _family(font: BuiltInFont) -> str:
+    # One family per folder: a static family's weights are separate faces of it.
+    return "fg-" + font.file.split("/")[0]
+
+
 @dataclass(frozen=True)
 class FontUse:
     family: str
@@ -100,7 +102,7 @@ class Fonts:
         use = self._use(ref)
         first = use.measure
         assert isinstance(first, Measure)
-        if ref == FALLBACK or all(first.has(char) for char in text):
+        if use.family == _family(BUILT_IN[FALLBACK]) or first.has(text):
             return use
         fallback = self._use(FALLBACK)
         assert isinstance(fallback.measure, Measure)
@@ -124,9 +126,8 @@ class Fonts:
             font = BUILT_IN[ref]
         except KeyError:
             raise MissingFont(f"there is no built-in font named {ref}") from None
-        # One family per folder: a static family's weights are separate faces of it.
         measure = _built_in_measure(font.path, font.weight)
-        use = FontUse("fg-" + font.file.split("/")[0], font.weight, measure)
+        use = FontUse(_family(font), font.weight, measure)
         weights = "1 1000" if font.variable else str(font.weight)
         if self._face_missing(use, weights):
             self._add(use, weights, *_built_in(font.path))

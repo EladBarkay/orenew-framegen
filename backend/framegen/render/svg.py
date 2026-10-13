@@ -389,6 +389,6 @@ class _Frame:
             f'direction="{text_direction(line, "rtl" if self.rtl else "ltr")}" '
             f'font-family="{font.family}" font-weight="{font.weight}" '
             f'font-size="{_n(layout.size)}" {_paint(color, opacity)}{turn} '
-            f'style="white-space:pre;font-synthesis:none">{escape(line)}</text>'
+            f'style="white-space:pre;font-synthesis:none;font-optical-sizing:none">{escape(line)}</text>'
             for line, baseline in zip(layout.lines, layout.baselines, strict=True)
         )

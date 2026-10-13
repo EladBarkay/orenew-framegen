@@ -261,7 +261,8 @@ text summary) is stored with it, so revisions do not pay for analysis again.
 
 Files go straight to object storage through pre-signed URLs; the API never streams
 large files. Accepted: PNG, JPEG, WebP, HEIC (phone photos), TIFF, PSD, PDF (first
-page), SVG (stamps), and font files (TTF, OTF, WOFF2).
+page), SVG (stamps), and font files (TTF, OTF, WOFF2; a WOFF2 is unpacked to TTF or OTF
+when it arrives, under a size limit, so the renderer never decompresses user files).
 
 The client declares each file's type, size and SHA-256 first. The upload link is signed
 with that checksum, so the storage refuses any other content. On completion FrameGen

@@ -110,15 +110,15 @@ def test_a_workspace_font_is_embedded_from_the_given_file() -> None:
 
 @pytest.mark.parametrize(
     ("data", "fmt"),
-    [(b"OTTO....", "opentype"), (b"wOF2....", "woff2"), (b"true....", "truetype")],
+    [(b"OTTO....", "opentype"), (b"true....", "truetype")],
 )
 def test_font_files_are_known_by_their_signature(data: bytes, fmt: str) -> None:
     assert FontFile(data).format == fmt
 
 
-@pytest.mark.parametrize("data", [b"", b"<svg", b"wOFF...."])
+@pytest.mark.parametrize("data", [b"", b"<svg", b"wOFF....", b"wOF2...."])
 def test_other_files_are_not_fonts(data: bytes) -> None:
-    with pytest.raises(ValueError, match="TrueType, OpenType or WOFF2"):
+    with pytest.raises(ValueError, match="TrueType or OpenType"):
         FontFile(data)
 
 

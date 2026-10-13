@@ -1,12 +1,9 @@
 """Measuring text with HarfBuzz and fitting it to its area (T-13b)."""
 
-import io
-
 import pytest
-from fontTools.ttLib import TTFont
 
 from framegen.fonts import BUILT_IN
-from framegen.render.measure import WRAP_BELOW, Measure, fit
+from framegen.render.measure import WRAP_BELOW, Fallback, fit
 from framegen.render.text import FontFile, Fonts
 
 HEEBO = Fonts({}).use("heebo-bold").measure
@@ -23,20 +20,6 @@ def test_the_line_box_is_the_fonts_own() -> None:
     # Heebo's ascender and descender are 2146 and -862 on a 2048 grid.
     assert HEEBO.line.ascent == pytest.approx(2146 / 2048)
     assert HEEBO.line.descent == pytest.approx(862 / 2048)
-
-
-def test_a_woff2_file_measures_as_its_truetype_original() -> None:
-    path = BUILT_IN["suez-one"].path
-    font = TTFont(path)
-    font.flavor = "woff2"
-    out = io.BytesIO()
-    font.save(out)
-    woff2 = out.getvalue()
-    assert woff2[:4] == b"wOF2"
-    original = Measure(path.read_bytes(), 400)
-    workspace = Fonts({"font_" + "b" * 26: FontFile(woff2)}).use("font_" + "b" * 26).measure
-    assert workspace.width("נועה ועודד") == original.width("נועה ועודד")
-    assert workspace.line == original.line
 
 
 def test_short_text_keeps_its_size() -> None:
@@ -101,6 +84,22 @@ def test_a_variable_workspace_font_is_measured_at_the_weight_it_is_drawn_at() ->
     assert workspace.width("Noa and Oded") == Fonts({}).use("rubik").measure.width("Noa and Oded")
 
 
-def test_an_unreadable_woff2_file_is_an_error() -> None:
-    with pytest.raises(ValueError, match="cannot be read"):
-        Measure(b"wOF2" + b"\x00" * 60, 400)
+def test_a_cluster_is_measured_in_one_font() -> None:
+    measure = Fallback(
+        Fonts({}).use("great-vibes").measure,  # type: ignore[arg-type]
+        Fonts({}).use("heebo").measure,  # type: ignore[arg-type]
+    )
+    heebo = Fonts({}).use("heebo").measure
+    # Great Vibes has "e" but not the Hebrew kamatz mark: Chromium draws both in Heebo.
+    assert measure.width("e\u05b8") == pytest.approx(heebo.width("e\u05b8"))
+
+
+def test_characters_neither_font_has_count_as_a_square() -> None:
+    measure = Fonts({}).use("great-vibes", "Noa 😀").measure
+    alone = Fonts({}).use("great-vibes").measure
+    assert measure.width("Noa 😀") == pytest.approx(alone.width("Noa ") + Fallback.MISSING)
+
+
+def test_heebo_does_not_fall_back_to_itself() -> None:
+    use = Fonts({}).use("heebo-black", "נועה 😀")
+    assert use.family == "fg-heebo"
