@@ -132,3 +132,13 @@ def test_a_crashed_chromium_is_started_again() -> None:
             return await rasteriser.png(svg, 20, 20)
 
     assert alpha(asyncio.run(run())).getextrema() == (0, 0)
+
+
+def test_a_closed_rasteriser_refuses_frames() -> None:
+    async def run() -> None:
+        async with Rasteriser() as rasteriser:
+            pass
+        await rasteriser.png("<svg/>", 10, 10)
+
+    with pytest.raises(RuntimeError, match="async with"):
+        asyncio.run(run())

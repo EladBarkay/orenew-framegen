@@ -21,13 +21,13 @@ RUN --mount=type=secret,id=build_ca,required=false \
 
 # The worker renders frames in headless Chromium (DESIGN.md 9). Playwright is pinned in
 # uv.lock, and it installs the matching Chromium build, so renders are the same everywhere.
-# Chromium is installed from the dependencies alone, so a code change does not download it
-# again; the app's own environment is copied over it afterwards.
+# Chromium is installed with the dependencies' environment mounted for that step only, so
+# a code change does not download it again and the dependencies are stored once.
 FROM python:3.12-slim AS worker
 RUN useradd --system --uid 10001 --no-create-home framegen
 ENV PATH=/app/.venv/bin:$PATH PYTHONUNBUFFERED=1 PLAYWRIGHT_BROWSERS_PATH=/opt/playwright
-COPY --from=dependencies /app/.venv /app/.venv
-RUN --mount=type=secret,id=build_ca,required=false \
+RUN --mount=type=bind,from=dependencies,source=/app/.venv,target=/app/.venv \
+    --mount=type=secret,id=build_ca,required=false \
     if [ -f /run/secrets/build_ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/build_ca; fi \
     && playwright install --with-deps --only-shell chromium \
     && chmod -R a+rX /opt/playwright \
