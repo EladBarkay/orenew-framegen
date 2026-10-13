@@ -372,8 +372,10 @@ class _Frame:
         shorter side. Each line is a paragraph, with its own direction."""
         cx, cy = area.x + area.width / 2, area.y + area.height / 2
         turn = "" if area.upright else f' transform="rotate(-90 {_n(cx)} {_n(cy)})"'
-        size_px = size * self.short
-        lines = text.split("\n")
+        # Blank lines would only push the text off-centre.
+        lines = [line for line in text.split("\n") if line.strip()]
+        # The lines never run past their area's depth; fitting them along it is T-13b.
+        size_px = min(size * self.short, area.depth / (len(lines) * LINE_HEIGHT))
         first = cy - (len(lines) - 1) * LINE_HEIGHT * size_px / 2
         return "".join(
             f'<text x="{_n(cx)}" y="{_n(first + i * LINE_HEIGHT * size_px)}" '

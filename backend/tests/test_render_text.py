@@ -198,3 +198,23 @@ def test_a_slot_with_no_room_is_an_error() -> None:
 def test_text_is_kept_out_of_the_window() -> None:
     svg = render_svg(spec(headline=headline()), "portrait", 600, 900)
     assert re.search(r'<g mask="url\(#window-cut\)"><text ', svg)
+
+
+def test_blank_lines_are_left_out() -> None:
+    lines = texts(render_svg(spec(headline=headline("\nנועה\n \n")), "portrait", 600, 900))
+    assert [(t["body"], t["y"]) for t in lines] == [("נועה", "810")]
+
+
+def test_lines_never_run_past_their_area() -> None:
+    many = "\n".join("abcdef")
+    (*_, last) = texts(render_svg(spec(headline=headline(many, size=0.1)), "portrait", 600, 900))
+    # The bottom band's area is 732 to 888 (156 deep): six lines of 1.2 x 21.667.
+    assert last["font-size"] == "21.667"
+    assert float(last["y"]) + float(last["font-size"]) * 0.6 == pytest.approx(888)
+
+
+def test_no_room_under_the_headline_is_an_error() -> None:
+    shallow = {"top": 0.1, "bottom": 0.04, "start": 0.1, "end": 0.1}
+    parts = {"headline": headline(), "stamp": stamp("under-headline")}
+    with pytest.raises(NoRoom, match="under the headline"):
+        render_svg(spec(shallow, **parts), "portrait", 600, 900)

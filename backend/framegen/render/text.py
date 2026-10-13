@@ -151,13 +151,14 @@ class Area:
         """Into a first part (a share `first` of the depth, less the gap) and the rest
         after the gap, in reading order: below for upright text, to the right for text
         running up."""
+        cut = self.depth * first
+        if cut - gap / 2 < 1 or self.depth - cut - gap / 2 < 1:
+            raise NoRoom("the slot has no room for a second line under the headline")
         if self.upright:
-            cut = self.height * first
             return (
                 Area(self.x, self.y, self.width, cut - gap / 2, True),
                 Area(self.x, self.y + cut + gap / 2, self.width, self.height - cut - gap / 2, True),
             )
-        cut = self.width * first
         return (
             Area(self.x, self.y, cut - gap / 2, self.height, False),
             Area(self.x + cut + gap / 2, self.y, self.width - cut - gap / 2, self.height, False),
