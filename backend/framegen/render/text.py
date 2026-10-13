@@ -9,7 +9,7 @@ text the font covers. Fitting text to its slot comes with T-13b.
 import base64
 import functools
 import unicodedata
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -59,8 +59,10 @@ class NoRoom(ValueError):
 
 
 @functools.cache
-def _built_in_file(path: Path) -> FontFile:
-    return FontFile(path.read_bytes())
+def _built_in(path: Path) -> tuple[FontFormat, str]:
+    """A built-in file's format and base64 text, encoded once per process."""
+    file = FontFile(path.read_bytes())
+    return file.format, base64.b64encode(file.data).decode("ascii")
 
 
 @dataclass(frozen=True)
@@ -82,23 +84,30 @@ class Fonts:
                 file = self._workspace[ref]
             except KeyError:
                 raise MissingFont(f"no font file given for {ref}") from None
-            family, weights = f"fg-{ref}", "400"
-            use = FontUse(family, 400)
-        else:
+            # Each workspace font is its own family, whatever weight its file is.
+            use, weights = FontUse(f"fg-{ref}", 400), "400"
+            if self._face_missing(use, weights):
+                self._add(use, weights, file.format, base64.b64encode(file.data).decode("ascii"))
+            return use
+        try:
             font = BUILT_IN[ref]
-            file = _built_in_file(font.path)
-            # One family per folder: a static family's weights are separate faces of it.
-            family = "fg-" + font.file.split("/")[0]
-            weights = "1 1000" if font.variable else str(font.weight)
-            use = FontUse(family, font.weight)
-        key = f"{family} {weights}"
-        if key not in self._faces:
-            data = base64.b64encode(file.data).decode("ascii")
-            self._faces[key] = (
-                f'@font-face{{font-family:"{family}";font-weight:{weights};'
-                f'src:url(data:{_MIME[file.format]};base64,{data}) format("{file.format}")}}'
-            )
+        except KeyError:
+            raise MissingFont(f"there is no built-in font named {ref}") from None
+        # One family per folder: a static family's weights are separate faces of it.
+        use = FontUse("fg-" + font.file.split("/")[0], font.weight)
+        weights = "1 1000" if font.variable else str(font.weight)
+        if self._face_missing(use, weights):
+            self._add(use, weights, *_built_in(font.path))
         return use
+
+    def _face_missing(self, use: FontUse, weights: str) -> bool:
+        return f"{use.family} {weights}" not in self._faces
+
+    def _add(self, use: FontUse, weights: str, fmt: FontFormat, data: str) -> None:
+        self._faces[f"{use.family} {weights}"] = (
+            f'@font-face{{font-family:"{use.family}";font-weight:{weights};'
+            f'src:url(data:{_MIME[fmt]};base64,{data}) format("{fmt}")}}'
+        )
 
     def style(self) -> str | None:
         if not self._faces:
@@ -138,19 +147,20 @@ class Area:
         """Room across the line."""
         return self.height if self.upright else self.width
 
-    def split(self, first: float) -> tuple["Area", "Area"]:
-        """Into a first part (a share `first` of the depth) and the rest after it, in
-        reading order: below for upright text, to the right for text running up."""
+    def split(self, first: float, gap: float) -> tuple["Area", "Area"]:
+        """Into a first part (a share `first` of the depth, less the gap) and the rest
+        after the gap, in reading order: below for upright text, to the right for text
+        running up."""
         if self.upright:
             cut = self.height * first
             return (
-                Area(self.x, self.y, self.width, cut, True),
-                Area(self.x, self.y + cut, self.width, self.height - cut, True),
+                Area(self.x, self.y, self.width, cut - gap / 2, True),
+                Area(self.x, self.y + cut + gap / 2, self.width, self.height - cut - gap / 2, True),
             )
         cut = self.width * first
         return (
-            Area(self.x, self.y, cut, self.height, False),
-            Area(self.x + cut, self.y, self.width - cut, self.height, False),
+            Area(self.x, self.y, cut - gap / 2, self.height, False),
+            Area(self.x + cut + gap / 2, self.y, self.width - cut - gap / 2, self.height, False),
         )
 
 
@@ -167,31 +177,34 @@ def slot_area(
     height: int,
     window: tuple[float, float, float, float],
     rtl: bool,
+    taken: Collection[Slot] = (),
 ) -> Area:
     """A slot's area in a frame of width x height pixels with its window at (x, y, width,
-    height). 'under-headline' is part of the headline's slot (see Area.split)."""
+    height). A band's corners are its outer quarters: when another component is in one
+    of them (`taken`), the band keeps its middle half, so its text stays centred.
+    'under-headline' is part of the headline's slot (see Area.split)."""
     wx, wy, ww, wh = window
-    margin = MARGIN * min(width, height)
-    left_side = Area(0, wy, wx, wh, False)
-    right_side = Area(wx + ww, wy, width - wx - ww, wh, False)
-    top = Area(0, 0, width, wy, True)
-    bottom = Area(0, wy + wh, width, height - wy - wh, True)
-    third = width / 3
+    quarter = width / 4
+    top = (0.0, wy)
+    bottom = (wy + wh, height - wy - wh)
     areas = {
-        "top-band": top,
-        "bottom-band": bottom,
-        "top-left": Area(0, 0, third, wy, True),
-        "top-right": Area(width - third, 0, third, wy, True),
-        "bottom-left": Area(0, wy + wh, third, bottom.height, True),
-        "bottom-right": Area(width - third, wy + wh, third, bottom.height, True),
-        "left-edge": left_side,
-        "right-edge": right_side,
+        "top-left": Area(0, top[0], quarter, top[1], True),
+        "top-right": Area(width - quarter, top[0], quarter, top[1], True),
+        "bottom-left": Area(0, bottom[0], quarter, bottom[1], True),
+        "bottom-right": Area(width - quarter, bottom[0], quarter, bottom[1], True),
+        "left-edge": Area(0, wy, wx, wh, False),
+        "right-edge": Area(wx + ww, wy, width - wx - ww, wh, False),
     }
+    for band, (y, depth) in (("top", top), ("bottom", bottom)):
+        corners = {f"{band}-start", f"{band}-end"}
+        x, length = (quarter, width / 2) if corners & set(taken) else (0, width)
+        areas[f"{band}-band"] = Area(x, y, length, depth, True)
     start, end = ("right", "left") if rtl else ("left", "right")
     name = slot.replace("start", start).replace("end", end)
     if name not in areas:
         raise ValueError(f"{slot} is not a slot of its own")
     area = areas[name]
+    margin = MARGIN * min(width, height)
     inner = Area(
         area.x + margin,
         area.y + margin,

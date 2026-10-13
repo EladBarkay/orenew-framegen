@@ -8,7 +8,7 @@ import pytest
 
 from framegen.fonts import BUILT_IN, FILES
 from framegen.render.svg import render_svg
-from framegen.render.text import FontFile, MissingFont, NoRoom, text_direction
+from framegen.render.text import FontFile, Fonts, MissingFont, NoRoom, text_direction
 from framegen.spec import read_spec
 
 WORKSPACE_FONT = "font_" + "a" * 26
@@ -146,7 +146,7 @@ def test_bands_hold_text_between_the_window_and_the_edge() -> None:
 @pytest.mark.parametrize(
     ("direction", "slot", "x"),
     [("rtl", "start-edge", "570"), ("rtl", "end-edge", "30"), ("ltr", "start-edge", "30"),
-     ("ltr", "top-start", "100"), ("rtl", "top-start", "500")],
+     ("ltr", "top-start", "75"), ("rtl", "top-start", "525")],
 )  # fmt: skip
 def test_start_and_end_follow_the_reading_direction(direction: str, slot: str, x: str) -> None:
     svg = render_svg(spec(stamp=stamp(slot)), "portrait", 600, 900, direction=direction)  # type: ignore[arg-type]
@@ -163,8 +163,30 @@ def test_edge_text_runs_up_the_frame() -> None:
 def test_room_is_kept_under_the_headline() -> None:
     parts = {"headline": headline(), "stamp": stamp("under-headline")}
     above, under = texts(render_svg(spec(**parts), "portrait", 600, 900))
-    # The bottom band's area is 732 to 888: the headline takes its first 60%.
-    assert (above["y"], under["y"]) == ("778.8", "856.8")
+    # The bottom band's area is 732 to 888: the headline takes its first 60% (to 825.6),
+    # less half the 12-pixel gap.
+    assert (above["y"], under["y"]) == ("775.8", "859.8")
+
+
+def test_a_band_with_a_corner_taken_keeps_its_middle_half() -> None:
+    parts = {"headline": headline(), "stamp": stamp("bottom-end")}
+    band, corner = texts(render_svg(spec(**parts), "portrait", 600, 900))
+    assert (band["x"], corner["x"]) == ("300", "75")
+    alone = texts(render_svg(spec(headline=headline()), "portrait", 600, 900))
+    assert alone[0]["x"] == "300"
+
+
+def test_each_line_is_its_own_paragraph() -> None:
+    lines = texts(render_svg(spec(headline=headline("נועה\nNoa")), "portrait", 600, 900))
+    assert [(t["body"], t["y"], t["direction"]) for t in lines] == [
+        ("נועה", "792", "rtl"),
+        ("Noa", "828", "ltr"),
+    ]
+
+
+def test_an_unknown_built_in_font_is_a_missing_font() -> None:
+    with pytest.raises(MissingFont, match="comic-sans"):
+        Fonts({}).use("comic-sans")
 
 
 def test_a_slot_with_no_room_is_an_error() -> None:

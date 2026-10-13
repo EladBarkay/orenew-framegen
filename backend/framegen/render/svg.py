@@ -25,6 +25,7 @@ from xml.sax.saxutils import escape, quoteattr
 
 from framegen.render.text import (
     HEADLINE_SHARE,
+    MARGIN,
     Area,
     FontFile,
     Fonts,
@@ -44,7 +45,10 @@ from framegen.spec.models import (
     Window,
     ratio,
 )
-from framegen.spec.text import Orientation, TextStamp, slot_in
+from framegen.spec.text import Orientation, Slot, TextStamp, slot_in
+
+LINE_HEIGHT = 1.2
+"""Between the baselines of a text's lines, as a share of its size."""
 
 Direction = Literal["rtl", "ltr"]
 """Reading direction: in right-to-left text (Hebrew), start is the right side."""
@@ -329,18 +333,23 @@ class _Frame:
     ) -> Iterator[str]:
         """The headline and a text stamp, each in its slot."""
         box = (window.x, window.y, window.width, window.height)
+        # Every component's slot counts, including those not drawn yet (dates, T-14), so
+        # adding them later does not move the others.
+        taken = [
+            slot_in(part.slot, orientation)
+            for part in (spec.headline, spec.date, spec.stamp)
+            if part is not None
+        ]
+
+        def area_of(slot: Slot) -> Area:
+            return slot_area(slot, self.width, self.height, box, self.rtl, taken)
+
         under: Area | None = None
         if spec.headline is not None:
             headline = spec.headline
-            area = slot_area(
-                slot_in(headline.slot, orientation), self.width, self.height, box, self.rtl
-            )
-            # Room is kept for what goes under the headline, even if it is not drawn yet.
-            if any(
-                part is not None and slot_in(part.slot, orientation) == "under-headline"
-                for part in (spec.date, spec.stamp)
-            ):
-                area, under = area.split(HEADLINE_SHARE)
+            area = area_of(slot_in(headline.slot, orientation))
+            if "under-headline" in taken:
+                area, under = area.split(HEADLINE_SHARE, gap=MARGIN * self.short)
             yield self.text(
                 headline.text, area, fonts.use(headline.font), headline.size, headline.color, 1
             )
@@ -351,7 +360,7 @@ class _Frame:
                 assert under is not None  # the spec has a headline (FrameSpec checks it)
                 area = under
             else:
-                area = slot_area(slot, self.width, self.height, box, self.rtl)
+                area = area_of(slot)
             yield self.text(
                 stamp.text, area, fonts.use(stamp.font), stamp.size, stamp.color, stamp.opacity
             )
@@ -359,14 +368,19 @@ class _Frame:
     def text(
         self, text: str, area: Area, font: FontUse, size: float, color: str, opacity: float
     ) -> str:
-        """One line centred in its area; `size` is a share of the shorter side."""
+        """The text's lines, centred together in its area; `size` is a share of the
+        shorter side. Each line is a paragraph, with its own direction."""
         cx, cy = area.x + area.width / 2, area.y + area.height / 2
         turn = "" if area.upright else f' transform="rotate(-90 {_n(cx)} {_n(cy)})"'
-        direction = text_direction(text, "rtl" if self.rtl else "ltr")
-        return (
-            f'<text x="{_n(cx)}" y="{_n(cy)}" text-anchor="middle" '
-            f'dominant-baseline="central" direction="{direction}" '
+        size_px = size * self.short
+        lines = text.split("\n")
+        first = cy - (len(lines) - 1) * LINE_HEIGHT * size_px / 2
+        return "".join(
+            f'<text x="{_n(cx)}" y="{_n(first + i * LINE_HEIGHT * size_px)}" '
+            f'text-anchor="middle" dominant-baseline="central" '
+            f'direction="{text_direction(line, "rtl" if self.rtl else "ltr")}" '
             f'font-family="{font.family}" font-weight="{font.weight}" '
-            f'font-size="{_n(size * self.short)}" {_paint(color, opacity)}{turn} '
-            f'style="white-space:pre;font-synthesis:none">{escape(text)}</text>'
+            f'font-size="{_n(size_px)}" {_paint(color, opacity)}{turn} '
+            f'style="white-space:pre;font-synthesis:none">{escape(line)}</text>'
+            for i, line in enumerate(lines)
         )
