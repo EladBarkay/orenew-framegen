@@ -189,6 +189,10 @@ side by side.
   with stand-ins for the commercial fonts the owner's frames use (`attachments/README.md`).
   The renderer embeds the font files in the SVG, so Chromium never picks a font the
   machine happens to have for text the font covers.
+- Text fits its slot: it is measured with HarfBuzz (Chromium's own shaper) from the same
+  font files and drawn at the largest size up to the spec's that fits. One line that
+  would shrink below 75% is broken in two at the most even space, if that is bigger;
+  line breaks typed in the text are kept. Text never overflows its slot.
 - **Dates:** stored as one calendar date plus `afterSunset`. Each format renders it in
   a calendar:
   - Gregorian through `Intl.DateTimeFormat` patterns or styles, in any locale.
@@ -257,7 +261,8 @@ text summary) is stored with it, so revisions do not pay for analysis again.
 
 Files go straight to object storage through pre-signed URLs; the API never streams
 large files. Accepted: PNG, JPEG, WebP, HEIC (phone photos), TIFF, PSD, PDF (first
-page), SVG (stamps), and font files (TTF, OTF, WOFF2).
+page), SVG (stamps), and font files (TTF, OTF, WOFF2; a WOFF2 is unpacked to TTF or OTF
+when it arrives, under a size limit, so the renderer never decompresses user files).
 
 The client declares each file's type, size and SHA-256 first. The upload link is signed
 with that checksum, so the storage refuses any other content. On completion FrameGen

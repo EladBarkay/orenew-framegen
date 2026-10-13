@@ -16,6 +16,7 @@ dependencies = [
     "pydantic>=2.11",
     "pydantic-settings>=2.15.0",
     "sqlalchemy[asyncio]>=2.1.4",
+    "uharfbuzz>=0.53",
     "uvicorn>=0.54.0",
 ]
 
@@ -53,6 +54,11 @@ allowed-confusables = ["ו", "ס", "ן"]
 strict = true
 python_version = "3.12"
 packages = ["framegen", "tests"]
+
+[[tool.mypy.overrides]]
+# It ships no type information.
+module = ["uharfbuzz"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -4,6 +4,7 @@ installs it with `playwright install`)."""
 import asyncio
 import io
 import os
+import re
 import threading
 from collections.abc import Iterator
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -173,3 +174,23 @@ def test_text_too_big_for_its_slot_stays_out_of_the_window() -> None:
     # The window is 45 to 720 down and 36 to 564 across.
     window = alpha(png).crop((36, 45, 564, 720))
     assert window.getextrema() == (0, 0)
+
+
+@pytest.mark.parametrize(
+    "font", ["heebo-black", "suez-one", "amatic-sc-bold", "great-vibes", "playfair-display"]
+)
+def test_long_text_is_fitted_to_its_slot_as_chromium_draws_it(font: str) -> None:
+    text = "Noa & Oded נועה ועודד" if font != "great-vibes" else "Noa and Oded forever"
+    svg = frame("rectangle", headline(font, text, 0.12))
+    (png,) = rasterise((svg, 600, 900))
+    box = ink(png).getbbox()
+    assert box is not None
+    left, top, right, bottom = box
+    # The bottom band's area is 12 to 588 across and 732 to 888 down (the window ends at
+    # 720, the frame at 900). HarfBuzz's widths are Chromium's: text that had to shrink
+    # fills the area's length, give or take the glyphs' side bearings, and stays inside.
+    assert left >= 11 and right <= 589
+    assert top >= 720 and bottom <= 900
+    size = float(re.findall(r'font-size="([\d.]+)"', svg)[0])
+    if size < 0.12 * 600:
+        assert right - left > 0.85 * 576

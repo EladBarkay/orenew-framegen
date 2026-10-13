@@ -3,39 +3,39 @@ is drawn in.
 
 Chromium shapes and lays out the text, so every script, right-to-left text and mixed
 Hebrew/English work; the fonts are embedded, so it never uses the machine's fonts for
-text the font covers. Fitting text to its slot comes with T-13b.
+text the font covers. The same files measure the text, to fit it (render.measure).
 """
 
 import base64
 import functools
+import hashlib
 import unicodedata
+from collections import OrderedDict
 from collections.abc import Collection, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
-from framegen.fonts import BUILT_IN
+from framegen.fonts import BUILT_IN, BuiltInFont
+from framegen.render.measure import Fallback, Measure, Measurer
 from framegen.spec.text import Slot
 
-FontFormat = Literal["truetype", "opentype", "woff2"]
+FontFormat = Literal["truetype", "opentype"]
 
 _SIGNATURES: dict[bytes, FontFormat] = {
     b"\x00\x01\x00\x00": "truetype",
     b"true": "truetype",
     b"OTTO": "opentype",
-    b"wOF2": "woff2",
 }
 
-_MIME: dict[FontFormat, str] = {
-    "truetype": "font/ttf",
-    "opentype": "font/otf",
-    "woff2": "font/woff2",
-}
+_MIME: dict[FontFormat, str] = {"truetype": "font/ttf", "opentype": "font/otf"}
 
 
 @dataclass(frozen=True)
 class FontFile:
-    """A workspace font as the renderer is given it: the file's bytes, as uploaded."""
+    """A workspace font as the renderer is given it: a TrueType or OpenType file. WOFF2
+    uploads are unpacked to one when they arrive (T-15), under a size limit, so the
+    renderer never decompresses what a user sent."""
 
     data: bytes
 
@@ -44,7 +44,7 @@ class FontFile:
         try:
             return _SIGNATURES[self.data[:4]]
         except KeyError:
-            raise ValueError("a font must be a TrueType, OpenType or WOFF2 file") from None
+            raise ValueError("a font must be a TrueType or OpenType file") from None
 
     def __post_init__(self) -> None:
         self.format  # noqa: B018 (checks the signature)
@@ -58,6 +58,32 @@ class NoRoom(ValueError):
     """The frame leaves a slot no room at all (for example a window reaching the edge)."""
 
 
+FALLBACK = "heebo"
+"""For characters a font does not have (Hebrew in a Latin font): drawn and measured."""
+
+
+@functools.cache
+def _built_in_measure(path: Path, weight: int) -> Measure:
+    return Measure(path.read_bytes(), weight)
+
+
+_WORKSPACE_MEASURES: OrderedDict[bytes, Measure] = OrderedDict()
+WORKSPACE_MEASURES_KEPT = 8
+
+
+def _workspace_measure(data: bytes) -> Measure:
+    """Measured at weight 400, as drawn (Fonts.use). The last few are kept, by the file's
+    digest, so a job rendering several sizes measures its fonts once."""
+    key = hashlib.sha256(data).digest()
+    if key in _WORKSPACE_MEASURES:
+        _WORKSPACE_MEASURES.move_to_end(key)
+    else:
+        _WORKSPACE_MEASURES[key] = Measure(data, 400)
+        if len(_WORKSPACE_MEASURES) > WORKSPACE_MEASURES_KEPT:
+            _WORKSPACE_MEASURES.popitem(last=False)
+    return _WORKSPACE_MEASURES[key]
+
+
 @functools.cache
 def _built_in(path: Path) -> tuple[FontFormat, str]:
     """A built-in file's format and base64 text, encoded once per process."""
@@ -65,10 +91,16 @@ def _built_in(path: Path) -> tuple[FontFormat, str]:
     return file.format, base64.b64encode(file.data).decode("ascii")
 
 
+def _family(font: BuiltInFont) -> str:
+    # One family per folder: a static family's weights are separate faces of it.
+    return "fg-" + font.file.split("/")[0]
+
+
 @dataclass(frozen=True)
 class FontUse:
     family: str
     weight: int
+    measure: Measurer = field(compare=False, repr=False)
 
 
 class Fonts:
@@ -78,14 +110,31 @@ class Fonts:
         self._workspace = workspace
         self._faces: dict[str, str] = {}
 
-    def use(self, ref: str) -> FontUse:
+    def use(self, ref: str, text: str = "") -> FontUse:
+        """The font for `text`, with the fallback font added if it lacks some of it."""
+        use = self._use(ref)
+        first = use.measure
+        assert isinstance(first, Measure)
+        if first.has(text):
+            return use
+        if use.family == _family(BUILT_IN[FALLBACK]):
+            # The font is the fallback: what it lacks is measured as missing.
+            return FontUse(use.family, use.weight, Fallback(first, first))
+        fallback = self._use(FALLBACK)
+        assert isinstance(fallback.measure, Measure)
+        # The weight given is the font's: Heebo is variable, so it follows it.
+        second = _built_in_measure(BUILT_IN[FALLBACK].path, use.weight)
+        return FontUse(f"{use.family}, {fallback.family}", use.weight, Fallback(first, second))
+
+    def _use(self, ref: str) -> FontUse:
         if ref.startswith("font_"):
             try:
                 file = self._workspace[ref]
             except KeyError:
                 raise MissingFont(f"no font file given for {ref}") from None
             # Each workspace font is its own family, whatever weight its file is.
-            use, weights = FontUse(f"fg-{ref}", 400), "400"
+            use = FontUse(f"fg-{ref}", 400, _workspace_measure(file.data))
+            weights = "400"
             if self._face_missing(use, weights):
                 self._add(use, weights, file.format, base64.b64encode(file.data).decode("ascii"))
             return use
@@ -93,8 +142,8 @@ class Fonts:
             font = BUILT_IN[ref]
         except KeyError:
             raise MissingFont(f"there is no built-in font named {ref}") from None
-        # One family per folder: a static family's weights are separate faces of it.
-        use = FontUse("fg-" + font.file.split("/")[0], font.weight)
+        measure = _built_in_measure(font.path, font.weight)
+        use = FontUse(_family(font), font.weight, measure)
         weights = "1 1000" if font.variable else str(font.weight)
         if self._face_missing(use, weights):
             self._add(use, weights, *_built_in(font.path))
