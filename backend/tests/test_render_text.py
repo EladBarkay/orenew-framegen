@@ -46,6 +46,13 @@ def texts(svg: str) -> list[dict[str, str]]:
     ]
 
 
+def middle(text: dict[str, str], font: str) -> float:
+    """The middle of a line's box (ascent above its baseline, descent below)."""
+    line = Fonts({}).use(font).measure.line
+    size = float(text["font-size"])
+    return float(text["y"]) + (line.descent - line.ascent) * size / 2
+
+
 def faces(svg: str) -> list[tuple[str, str]]:
     return re.findall(r'@font-face\{font-family:"([^"]+)";font-weight:([^;]+);', svg)
 
@@ -137,9 +144,10 @@ def test_bands_hold_text_between_the_window_and_the_edge() -> None:
     svg = render_svg(spec(headline=headline(), stamp=stamp("top-band")), "portrait", 600, 900)
     bottom, top = texts(svg)
     # The window is 90 to 720 down; bands keep a margin of 2% of the shorter side (12).
-    assert (bottom["x"], bottom["y"]) == ("300", "810")
-    assert (top["x"], top["y"]) == ("300", "45")
-    assert bottom["font-size"] == "30"  # 5% of the shorter side
+    assert (bottom["x"], top["x"]) == ("300", "300")
+    assert middle(bottom, "heebo-bold") == pytest.approx(810, abs=0.002)
+    assert middle(top, "amatic-sc-bold") == pytest.approx(45, abs=0.002)
+    assert bottom["font-size"] == "30"  # 5% of the shorter side: it fits
     assert "transform" not in bottom
 
 
@@ -156,8 +164,9 @@ def test_start_and_end_follow_the_reading_direction(direction: str, slot: str, x
 
 def test_edge_text_runs_up_the_frame() -> None:
     (text,) = texts(render_svg(spec(stamp=stamp("end-edge")), "portrait", 600, 900))
-    assert text["transform"] == f"rotate(-90 {text['x']} {text['y']})"
-    assert text["y"] == "405"  # the middle of the window's height
+    # Turned about the middle of the left edge's area, level with the window's middle.
+    assert text["transform"] == f"rotate(-90 {text['x']} 405)"
+    assert middle(text, "amatic-sc-bold") == pytest.approx(405, abs=0.002)
 
 
 def test_room_is_kept_under_the_headline() -> None:
@@ -165,7 +174,8 @@ def test_room_is_kept_under_the_headline() -> None:
     above, under = texts(render_svg(spec(**parts), "portrait", 600, 900))
     # The bottom band's area is 732 to 888: the headline takes its first 60% (to 825.6),
     # less half the 12-pixel gap.
-    assert (above["y"], under["y"]) == ("775.8", "859.8")
+    assert middle(above, "heebo-bold") == pytest.approx(775.8, abs=0.002)
+    assert middle(under, "amatic-sc-bold") == pytest.approx(859.8, abs=0.002)
 
 
 def test_a_band_with_a_corner_taken_keeps_its_middle_half() -> None:
@@ -178,10 +188,13 @@ def test_a_band_with_a_corner_taken_keeps_its_middle_half() -> None:
 
 def test_each_line_is_its_own_paragraph() -> None:
     lines = texts(render_svg(spec(headline=headline("נועה\nNoa")), "portrait", 600, 900))
-    assert [(t["body"], t["y"], t["direction"]) for t in lines] == [
-        ("נועה", "792", "rtl"),
-        ("Noa", "828", "ltr"),
-    ]
+    assert [(t["body"], t["direction"]) for t in lines] == [("נועה", "rtl"), ("Noa", "ltr")]
+    # Stacked a line box apart, centred together.
+    step = Fonts({}).use("heebo-bold").measure.line.height * 30
+    assert float(lines[1]["y"]) - float(lines[0]["y"]) == pytest.approx(step, abs=0.002)
+    assert (middle(lines[0], "heebo-bold") + middle(lines[1], "heebo-bold")) / 2 == (
+        pytest.approx(810, abs=0.002)
+    )
 
 
 def test_an_unknown_built_in_font_is_a_missing_font() -> None:
@@ -204,15 +217,21 @@ def test_blank_lines_are_left_out() -> None:
     lines = texts(
         render_svg(spec(headline=headline("\nנועה\n \n\u200f\u200b\n")), "portrait", 600, 900)
     )
-    assert [(t["body"], t["y"]) for t in lines] == [("נועה", "810")]
+    assert [t["body"] for t in lines] == ["נועה"]
+    assert middle(lines[0], "heebo-bold") == pytest.approx(810, abs=0.002)
 
 
 def test_lines_never_run_past_their_area() -> None:
     many = "\n".join("abcdef")
-    (*_, last) = texts(render_svg(spec(headline=headline(many, size=0.1)), "portrait", 600, 900))
-    # The bottom band's area is 732 to 888 (156 deep): six lines of 1.2 x 21.667.
-    assert last["font-size"] == "21.667"
-    assert float(last["y"]) + float(last["font-size"]) * 0.6 == pytest.approx(888)
+    first, *_, last = texts(
+        render_svg(spec(headline=headline(many, size=0.1)), "portrait", 600, 900)
+    )
+    # The bottom band's area is 732 to 888: six line boxes fill it exactly.
+    line = Fonts({}).use("heebo-bold").measure.line
+    size = float(last["font-size"])
+    assert size < 60
+    assert float(first["y"]) - line.ascent * size == pytest.approx(732, abs=0.01)
+    assert float(last["y"]) + line.descent * size == pytest.approx(888, abs=0.01)
 
 
 def test_no_room_under_the_headline_is_an_error() -> None:

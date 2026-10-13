@@ -23,6 +23,7 @@ from dataclasses import dataclass
 from typing import Literal
 from xml.sax.saxutils import escape, quoteattr
 
+from framegen.render.measure import fit
 from framegen.render.text import (
     HEADLINE_SHARE,
     MARGIN,
@@ -46,9 +47,6 @@ from framegen.spec.models import (
     ratio,
 )
 from framegen.spec.text import Orientation, Slot, TextStamp, slot_in, visible
-
-LINE_HEIGHT = 1.2
-"""Between the baselines of a text's lines, as a share of its size."""
 
 Direction = Literal["rtl", "ltr"]
 """Reading direction: in right-to-left text (Hebrew), start is the right side."""
@@ -368,21 +366,19 @@ class _Frame:
     def text(
         self, text: str, area: Area, font: FontUse, size: float, color: str, opacity: float
     ) -> str:
-        """The text's lines, centred together in its area; `size` is a share of the
-        shorter side. Each line is a paragraph, with its own direction."""
+        """The text fitted to its area (measure.fit), its lines centred together;
+        `size` is a share of the shorter side. Each line is a paragraph, with its own
+        direction."""
         cx, cy = area.x + area.width / 2, area.y + area.height / 2
         turn = "" if area.upright else f' transform="rotate(-90 {_n(cx)} {_n(cy)})"'
         # Blank lines would only push the text off-centre.
         lines = [line for line in text.split("\n") if any(visible(c) for c in line)]
-        # The lines never run past their area's depth; fitting them along it is T-13b.
-        size_px = min(size * self.short, area.depth / (len(lines) * LINE_HEIGHT))
-        first = cy - (len(lines) - 1) * LINE_HEIGHT * size_px / 2
+        layout = fit(lines, font.measure, area.length, area.depth, size * self.short)
         return "".join(
-            f'<text x="{_n(cx)}" y="{_n(first + i * LINE_HEIGHT * size_px)}" '
-            f'text-anchor="middle" dominant-baseline="central" '
+            f'<text x="{_n(cx)}" y="{_n(cy + baseline)}" text-anchor="middle" '
             f'direction="{text_direction(line, "rtl" if self.rtl else "ltr")}" '
             f'font-family="{font.family}" font-weight="{font.weight}" '
-            f'font-size="{_n(size_px)}" {_paint(color, opacity)}{turn} '
+            f'font-size="{_n(layout.size)}" {_paint(color, opacity)}{turn} '
             f'style="white-space:pre;font-synthesis:none">{escape(line)}</text>'
-            for i, line in enumerate(lines)
+            for line, baseline in zip(layout.lines, layout.baselines, strict=True)
         )

@@ -9,6 +9,7 @@ dependencies = [
     "argon2-cffi>=25.1.0",
     "boto3>=1.43.111",
     "fastapi>=0.143.0",
+    "fonttools[woff]>=4.60",
     "pillow>=12.0.0",
     "playwright==1.56.0",
     "procrastinate[psycopg]==3.10.0",
@@ -16,6 +17,7 @@ dependencies = [
     "pydantic>=2.11",
     "pydantic-settings>=2.15.0",
     "sqlalchemy[asyncio]>=2.1.4",
+    "uharfbuzz>=0.53",
     "uvicorn>=0.54.0",
 ]
 
@@ -53,6 +55,11 @@ allowed-confusables = ["ו", "ס", "ן"]
 strict = true
 python_version = "3.12"
 packages = ["framegen", "tests"]
+
+[[tool.mypy.overrides]]
+# Neither ships type information.
+module = ["uharfbuzz", "fontTools.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

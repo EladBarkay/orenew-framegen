@@ -3,18 +3,19 @@ is drawn in.
 
 Chromium shapes and lays out the text, so every script, right-to-left text and mixed
 Hebrew/English work; the fonts are embedded, so it never uses the machine's fonts for
-text the font covers. Fitting text to its slot comes with T-13b.
+text the font covers. The same files measure the text, to fit it (render.measure).
 """
 
 import base64
 import functools
 import unicodedata
 from collections.abc import Collection, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
 from framegen.fonts import BUILT_IN
+from framegen.render.measure import Measure
 from framegen.spec.text import Slot
 
 FontFormat = Literal["truetype", "opentype", "woff2"]
@@ -59,6 +60,11 @@ class NoRoom(ValueError):
 
 
 @functools.cache
+def _built_in_measure(path: Path, weight: int | None) -> Measure:
+    return Measure(path.read_bytes(), weight)
+
+
+@functools.cache
 def _built_in(path: Path) -> tuple[FontFormat, str]:
     """A built-in file's format and base64 text, encoded once per process."""
     file = FontFile(path.read_bytes())
@@ -69,6 +75,7 @@ def _built_in(path: Path) -> tuple[FontFormat, str]:
 class FontUse:
     family: str
     weight: int
+    measure: Measure = field(compare=False, repr=False)
 
 
 class Fonts:
@@ -77,6 +84,7 @@ class Fonts:
     def __init__(self, workspace: Mapping[str, FontFile]) -> None:
         self._workspace = workspace
         self._faces: dict[str, str] = {}
+        self._measures: dict[str, Measure] = {}
 
     def use(self, ref: str) -> FontUse:
         if ref.startswith("font_"):
@@ -85,7 +93,9 @@ class Fonts:
             except KeyError:
                 raise MissingFont(f"no font file given for {ref}") from None
             # Each workspace font is its own family, whatever weight its file is.
-            use, weights = FontUse(f"fg-{ref}", 400), "400"
+            if ref not in self._measures:
+                self._measures[ref] = Measure(file.data, None)
+            use, weights = FontUse(f"fg-{ref}", 400, self._measures[ref]), "400"
             if self._face_missing(use, weights):
                 self._add(use, weights, file.format, base64.b64encode(file.data).decode("ascii"))
             return use
@@ -94,7 +104,8 @@ class Fonts:
         except KeyError:
             raise MissingFont(f"there is no built-in font named {ref}") from None
         # One family per folder: a static family's weights are separate faces of it.
-        use = FontUse("fg-" + font.file.split("/")[0], font.weight)
+        measure = _built_in_measure(font.path, font.weight if font.variable else None)
+        use = FontUse("fg-" + font.file.split("/")[0], font.weight, measure)
         weights = "1 1000" if font.variable else str(font.weight)
         if self._face_missing(use, weights):
             self._add(use, weights, *_built_in(font.path))

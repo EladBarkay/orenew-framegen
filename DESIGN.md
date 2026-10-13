@@ -189,6 +189,10 @@ side by side.
   with stand-ins for the commercial fonts the owner's frames use (`attachments/README.md`).
   The renderer embeds the font files in the SVG, so Chromium never picks a font the
   machine happens to have for text the font covers.
+- Text fits its slot: it is measured with HarfBuzz (Chromium's own shaper) from the same
+  font files and drawn at the largest size up to the spec's that fits. One line that
+  would shrink below 75% is broken in two at the most even space, if that is bigger;
+  line breaks typed in the text are kept. Text never overflows its slot.
 - **Dates:** stored as one calendar date plus `afterSunset`. Each format renders it in
   a calendar:
   - Gregorian through `Intl.DateTimeFormat` patterns or styles, in any locale.
