@@ -4,7 +4,9 @@ The SVG is rasterised by Chromium (T-12b). Everything is computed here in pixels
 same spec, size and images always give the same text, and so the same pixels.
 
 Layers are drawn in their order, the first at the bottom. Each is cut by the window,
-except layers marked to overlap it. Text comes with T-13.
+except layers marked to overlap it. The headline and a text stamp go on top, in their
+slots, with the fonts embedded (render.text); dates come with T-14 and image stamps with
+T-15.
 
 Only placement follows the reading direction (start is the right side in Hebrew).
 Rotation is clockwise and artwork is drawn as given in both directions: flipping it is
@@ -19,8 +21,18 @@ import re
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from typing import Literal
-from xml.sax.saxutils import quoteattr
+from xml.sax.saxutils import escape, quoteattr
 
+from framegen.render.text import (
+    HEADLINE_SHARE,
+    MARGIN,
+    Area,
+    FontFile,
+    Fonts,
+    FontUse,
+    slot_area,
+    text_direction,
+)
 from framegen.spec import FrameSpec
 from framegen.spec.models import (
     ANCHOR_POINTS,
@@ -33,7 +45,10 @@ from framegen.spec.models import (
     Window,
     ratio,
 )
-from framegen.spec.text import Orientation
+from framegen.spec.text import Orientation, Slot, TextStamp, slot_in, visible
+
+LINE_HEIGHT = 1.2
+"""Between the baselines of a text's lines, as a share of its size."""
 
 Direction = Literal["rtl", "ltr"]
 """Reading direction: in right-to-left text (Hebrew), start is the right side."""
@@ -81,9 +96,10 @@ def render_svg(
     *,
     direction: Direction = "rtl",
     images: Mapping[str, Image] | None = None,
+    fonts: Mapping[str, FontFile] | None = None,
 ) -> str:
     """The frame at width x height pixels, with a transparent background. `images` holds
-    every piece and window mask the spec names, by ID."""
+    every piece and window mask the spec names, and `fonts` every workspace font, by ID."""
     if width < 1 or height < 1:
         raise ValueError("the size must be at least 1x1 pixels")
     if direction not in ("rtl", "ltr"):
@@ -97,10 +113,14 @@ def render_svg(
     window = frame.window_rect(spec.window, orientation)
     if window.width < 1 or window.height < 1:
         raise ValueError(f"{width}x{height} pixels is too small for the window")
+    used = Fonts(fonts or {})
+    texts = list(frame.texts(spec, orientation, window, used))
+    style = used.style()
     parts = [
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
         f'viewBox="0 0 {width} {height}">',
         "<defs>",
+        *([style] if style else []),
         *frame.window_cut(spec.window, window),
         "</defs>",
         *(
@@ -109,6 +129,8 @@ def render_svg(
             for layer in spec.decoration.layers
             for element in [frame.layer(layer, spec.window, window)]
         ),
+        # Text stays out of the window too, whatever its slot.
+        *(f'<g mask="url(#window-cut)">{text}</g>' for text in texts),
         "</svg>",
     ]
     return "\n".join(parts) + "\n"
@@ -302,4 +324,65 @@ class _Frame:
         return (
             f'<image href={quoteattr(image.href)} x="{_n(left)}" y="{_n(top)}" '
             f'width="{_n(w)}" height="{_n(h)}" preserveAspectRatio="none"{transform}/>'
+        )
+
+    # Text.
+
+    def texts(
+        self, spec: FrameSpec, orientation: Orientation, window: Rect, fonts: Fonts
+    ) -> Iterator[str]:
+        """The headline and a text stamp, each in its slot."""
+        box = (window.x, window.y, window.width, window.height)
+        # Every component's slot counts, including those not drawn yet (dates, T-14), so
+        # adding them later does not move the others.
+        taken = [
+            slot_in(part.slot, orientation)
+            for part in (spec.headline, spec.date, spec.stamp)
+            if part is not None
+        ]
+
+        def area_of(slot: Slot) -> Area:
+            return slot_area(slot, self.width, self.height, box, self.rtl, taken)
+
+        under: Area | None = None
+        if spec.headline is not None:
+            headline = spec.headline
+            area = area_of(slot_in(headline.slot, orientation))
+            if "under-headline" in taken:
+                area, under = area.split(HEADLINE_SHARE, gap=MARGIN * self.short)
+            yield self.text(
+                headline.text, area, fonts.use(headline.font), headline.size, headline.color, 1
+            )
+        stamp = spec.stamp
+        if isinstance(stamp, TextStamp):
+            slot = slot_in(stamp.slot, orientation)
+            if slot == "under-headline":
+                assert under is not None  # the spec has a headline (FrameSpec checks it)
+                area = under
+            else:
+                area = area_of(slot)
+            yield self.text(
+                stamp.text, area, fonts.use(stamp.font), stamp.size, stamp.color, stamp.opacity
+            )
+
+    def text(
+        self, text: str, area: Area, font: FontUse, size: float, color: str, opacity: float
+    ) -> str:
+        """The text's lines, centred together in its area; `size` is a share of the
+        shorter side. Each line is a paragraph, with its own direction."""
+        cx, cy = area.x + area.width / 2, area.y + area.height / 2
+        turn = "" if area.upright else f' transform="rotate(-90 {_n(cx)} {_n(cy)})"'
+        # Blank lines would only push the text off-centre.
+        lines = [line for line in text.split("\n") if any(visible(c) for c in line)]
+        # The lines never run past their area's depth; fitting them along it is T-13b.
+        size_px = min(size * self.short, area.depth / (len(lines) * LINE_HEIGHT))
+        first = cy - (len(lines) - 1) * LINE_HEIGHT * size_px / 2
+        return "".join(
+            f'<text x="{_n(cx)}" y="{_n(first + i * LINE_HEIGHT * size_px)}" '
+            f'text-anchor="middle" dominant-baseline="central" '
+            f'direction="{text_direction(line, "rtl" if self.rtl else "ltr")}" '
+            f'font-family="{font.family}" font-weight="{font.weight}" '
+            f'font-size="{_n(size_px)}" {_paint(color, opacity)}{turn} '
+            f'style="white-space:pre;font-synthesis:none">{escape(line)}</text>'
+            for i, line in enumerate(lines)
         )
