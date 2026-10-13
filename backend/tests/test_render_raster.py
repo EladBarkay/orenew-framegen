@@ -176,7 +176,9 @@ def test_text_too_big_for_its_slot_stays_out_of_the_window() -> None:
     assert window.getextrema() == (0, 0)
 
 
-@pytest.mark.parametrize("font", ["heebo-black", "suez-one", "amatic-sc-bold", "great-vibes"])
+@pytest.mark.parametrize(
+    "font", ["heebo-black", "suez-one", "amatic-sc-bold", "great-vibes", "playfair-display"]
+)
 def test_long_text_is_fitted_to_its_slot_as_chromium_draws_it(font: str) -> None:
     text = "Noa & Oded נועה ועודד" if font != "great-vibes" else "Noa and Oded forever"
     svg = frame("rectangle", headline(font, text, 0.12))

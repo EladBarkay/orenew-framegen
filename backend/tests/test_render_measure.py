@@ -33,7 +33,7 @@ def test_a_woff2_file_measures_as_its_truetype_original() -> None:
     font.save(out)
     woff2 = out.getvalue()
     assert woff2[:4] == b"wOF2"
-    original = Measure(path.read_bytes(), None)
+    original = Measure(path.read_bytes(), 400)
     workspace = Fonts({"font_" + "b" * 26: FontFile(woff2)}).use("font_" + "b" * 26).measure
     assert workspace.width("נועה ועודד") == original.width("נועה ועודד")
     assert workspace.line == original.line
@@ -85,3 +85,22 @@ def test_the_lines_are_centred_on_the_middle() -> None:
     bottom = layout.baselines[1] + HEEBO.line.descent * 30
     assert top == pytest.approx(-bottom)
     assert layout.baselines[1] - layout.baselines[0] == pytest.approx(HEEBO.line.height * 30)
+
+
+def test_text_a_font_lacks_is_measured_in_the_fallback() -> None:
+    great_vibes = Fonts({}).use("great-vibes", "Noa נועה").measure
+    heebo = Fonts({}).use("heebo").measure
+    alone = Fonts({}).use("great-vibes").measure
+    assert great_vibes.width("Noa נועה") == pytest.approx(alone.width("Noa ") + heebo.width("נועה"))
+
+
+def test_a_variable_workspace_font_is_measured_at_the_weight_it_is_drawn_at() -> None:
+    ref = "font_" + "c" * 26
+    rubik = FontFile(BUILT_IN["rubik"].path.read_bytes())  # its default instance is 300
+    workspace = Fonts({ref: rubik}).use(ref).measure
+    assert workspace.width("Noa and Oded") == Fonts({}).use("rubik").measure.width("Noa and Oded")
+
+
+def test_an_unreadable_woff2_file_is_an_error() -> None:
+    with pytest.raises(ValueError, match="cannot be read"):
+        Measure(b"wOF2" + b"\x00" * 60, 400)

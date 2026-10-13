@@ -12,7 +12,7 @@ from framegen.render.text import FontFile, Fonts, MissingFont, NoRoom, text_dire
 from framegen.spec import read_spec
 
 WORKSPACE_FONT = "font_" + "a" * 26
-TTF = b"\x00\x01\x00\x00" + b"rest of the font"
+TTF = BUILT_IN["suez-one"].path.read_bytes()
 
 
 def spec(inset: dict[str, float] | None = None, **parts: Any) -> Any:
@@ -239,3 +239,12 @@ def test_no_room_under_the_headline_is_an_error() -> None:
     parts = {"headline": headline(), "stamp": stamp("under-headline")}
     with pytest.raises(NoRoom, match="under the headline"):
         render_svg(spec(shallow, **parts), "portrait", 600, 900)
+
+
+def test_characters_a_font_lacks_are_drawn_in_the_fallback() -> None:
+    svg = render_svg(spec(headline=headline(font="great-vibes")), "portrait", 600, 900)
+    assert texts(svg)[0]["font-family"] == "fg-greatvibes, fg-heebo"
+    assert faces(svg) == [("fg-greatvibes", "400"), ("fg-heebo", "1 1000")]
+    latin = render_svg(spec(headline=headline("Noa", font="great-vibes")), "portrait", 600, 900)
+    assert texts(latin)[0]["font-family"] == "fg-greatvibes"
+    assert faces(latin) == [("fg-greatvibes", "400")]

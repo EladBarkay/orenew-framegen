@@ -349,7 +349,12 @@ class _Frame:
             if "under-headline" in taken:
                 area, under = area.split(HEADLINE_SHARE, gap=MARGIN * self.short)
             yield self.text(
-                headline.text, area, fonts.use(headline.font), headline.size, headline.color, 1
+                headline.text,
+                area,
+                fonts.use(headline.font, headline.text),
+                headline.size,
+                headline.color,
+                1,
             )
         stamp = spec.stamp
         if isinstance(stamp, TextStamp):
@@ -360,7 +365,12 @@ class _Frame:
             else:
                 area = area_of(slot)
             yield self.text(
-                stamp.text, area, fonts.use(stamp.font), stamp.size, stamp.color, stamp.opacity
+                stamp.text,
+                area,
+                fonts.use(stamp.font, stamp.text),
+                stamp.size,
+                stamp.color,
+                stamp.opacity,
             )
 
     def text(

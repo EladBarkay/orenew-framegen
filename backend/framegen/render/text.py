@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Literal
 
 from framegen.fonts import BUILT_IN
-from framegen.render.measure import Measure
+from framegen.render.measure import Fallback, Measure, Measurer
 from framegen.spec.text import Slot
 
 FontFormat = Literal["truetype", "opentype", "woff2"]
@@ -59,9 +59,19 @@ class NoRoom(ValueError):
     """The frame leaves a slot no room at all (for example a window reaching the edge)."""
 
 
+FALLBACK = "heebo"
+"""For characters a font does not have (Hebrew in a Latin font): drawn and measured."""
+
+
 @functools.cache
-def _built_in_measure(path: Path, weight: int | None) -> Measure:
+def _built_in_measure(path: Path, weight: int) -> Measure:
     return Measure(path.read_bytes(), weight)
+
+
+@functools.lru_cache(maxsize=32)
+def _workspace_measure(data: bytes) -> Measure:
+    # Drawn at weight 400 (Fonts.use), which a variable file is measured at too.
+    return Measure(data, 400)
 
 
 @functools.cache
@@ -75,7 +85,7 @@ def _built_in(path: Path) -> tuple[FontFormat, str]:
 class FontUse:
     family: str
     weight: int
-    measure: Measure = field(compare=False, repr=False)
+    measure: Measurer = field(compare=False, repr=False)
 
 
 class Fonts:
@@ -84,18 +94,29 @@ class Fonts:
     def __init__(self, workspace: Mapping[str, FontFile]) -> None:
         self._workspace = workspace
         self._faces: dict[str, str] = {}
-        self._measures: dict[str, Measure] = {}
 
-    def use(self, ref: str) -> FontUse:
+    def use(self, ref: str, text: str = "") -> FontUse:
+        """The font for `text`, with the fallback font added if it lacks some of it."""
+        use = self._use(ref)
+        first = use.measure
+        assert isinstance(first, Measure)
+        if ref == FALLBACK or all(first.has(char) for char in text):
+            return use
+        fallback = self._use(FALLBACK)
+        assert isinstance(fallback.measure, Measure)
+        # The weight given is the font's: Heebo is variable, so it follows it.
+        second = _built_in_measure(BUILT_IN[FALLBACK].path, use.weight)
+        return FontUse(f"{use.family}, {fallback.family}", use.weight, Fallback(first, second))
+
+    def _use(self, ref: str) -> FontUse:
         if ref.startswith("font_"):
             try:
                 file = self._workspace[ref]
             except KeyError:
                 raise MissingFont(f"no font file given for {ref}") from None
             # Each workspace font is its own family, whatever weight its file is.
-            if ref not in self._measures:
-                self._measures[ref] = Measure(file.data, None)
-            use, weights = FontUse(f"fg-{ref}", 400, self._measures[ref]), "400"
+            use = FontUse(f"fg-{ref}", 400, _workspace_measure(file.data))
+            weights = "400"
             if self._face_missing(use, weights):
                 self._add(use, weights, file.format, base64.b64encode(file.data).decode("ascii"))
             return use
@@ -104,7 +125,7 @@ class Fonts:
         except KeyError:
             raise MissingFont(f"there is no built-in font named {ref}") from None
         # One family per folder: a static family's weights are separate faces of it.
-        measure = _built_in_measure(font.path, font.weight if font.variable else None)
+        measure = _built_in_measure(font.path, font.weight)
         use = FontUse("fg-" + font.file.split("/")[0], font.weight, measure)
         weights = "1 1000" if font.variable else str(font.weight)
         if self._face_missing(use, weights):
