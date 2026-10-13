@@ -103,3 +103,11 @@ def test_characters_neither_font_has_count_as_a_square() -> None:
 def test_heebo_does_not_fall_back_to_itself() -> None:
     use = Fonts({}).use("heebo-black", "נועה 😀")
     assert use.family == "fg-heebo"
+    alone = Fonts({}).use("heebo-black").measure
+    assert use.measure.width("נועה 😀") == pytest.approx(alone.width("נועה ") + Fallback.MISSING)
+
+
+@pytest.mark.parametrize("emoji", ["👨\u200d👩\u200d👧", "🇮🇱", "👍🏽", "❤\ufe0f"])
+def test_an_emoji_sequence_is_one_square(emoji: str) -> None:
+    measure = Fonts({}).use("great-vibes", emoji).measure
+    assert measure.width(emoji) == pytest.approx(Fallback.MISSING)

@@ -8,7 +8,9 @@ text the font covers. The same files measure the text, to fit it (render.measure
 
 import base64
 import functools
+import hashlib
 import unicodedata
+from collections import OrderedDict
 from collections.abc import Collection, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -65,10 +67,21 @@ def _built_in_measure(path: Path, weight: int) -> Measure:
     return Measure(path.read_bytes(), weight)
 
 
-@functools.lru_cache(maxsize=32)
+_WORKSPACE_MEASURES: OrderedDict[bytes, Measure] = OrderedDict()
+WORKSPACE_MEASURES_KEPT = 8
+
+
 def _workspace_measure(data: bytes) -> Measure:
-    # Drawn at weight 400 (Fonts.use), which a variable file is measured at too.
-    return Measure(data, 400)
+    """Measured at weight 400, as drawn (Fonts.use). The last few are kept, by the file's
+    digest, so a job rendering several sizes measures its fonts once."""
+    key = hashlib.sha256(data).digest()
+    if key in _WORKSPACE_MEASURES:
+        _WORKSPACE_MEASURES.move_to_end(key)
+    else:
+        _WORKSPACE_MEASURES[key] = Measure(data, 400)
+        if len(_WORKSPACE_MEASURES) > WORKSPACE_MEASURES_KEPT:
+            _WORKSPACE_MEASURES.popitem(last=False)
+    return _WORKSPACE_MEASURES[key]
 
 
 @functools.cache
@@ -102,8 +115,11 @@ class Fonts:
         use = self._use(ref)
         first = use.measure
         assert isinstance(first, Measure)
-        if use.family == _family(BUILT_IN[FALLBACK]) or first.has(text):
+        if first.has(text):
             return use
+        if use.family == _family(BUILT_IN[FALLBACK]):
+            # The font is the fallback: what it lacks is measured as missing.
+            return FontUse(use.family, use.weight, Fallback(first, first))
         fallback = self._use(FALLBACK)
         assert isinstance(fallback.measure, Measure)
         # The weight given is the font's: Heebo is variable, so it follows it.

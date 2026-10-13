@@ -74,8 +74,9 @@ class Fallback:
     """A font with a second one for the characters it does not have, as Chromium draws
     them: each run of characters in the first font that has them."""
 
-    MISSING = 1.0
-    """The width, per pixel of font size, of a character neither font has."""
+    MISSING = 1.25
+    """The width, per pixel of font size, of a cluster neither font has: as wide as a
+    colour emoji (about 1.245), the widest such fonts draw."""
 
     def __init__(self, first: Measure, second: Measure) -> None:
         self._first = first
@@ -104,10 +105,17 @@ class Fallback:
 
 
 def _clusters(text: str) -> Iterator[str]:
-    """Each character with the marks and joiners that follow it."""
+    """Each character with what draws with it: marks, variation selectors, emoji skin
+    tones, the character after a joiner, and the second of a pair of flag letters."""
     cluster = ""
     for char in text:
-        if cluster and (unicodedata.category(char).startswith("M") or char == "\u200d"):
+        if cluster and (
+            unicodedata.category(char).startswith("M")
+            or char == "\u200d"
+            or cluster.endswith("\u200d")
+            or "\U0001f3fb" <= char <= "\U0001f3ff"
+            or (_flag_letter(char) and len(cluster) == 1 and _flag_letter(cluster))
+        ):
             cluster += char
         else:
             if cluster:
@@ -115,6 +123,10 @@ def _clusters(text: str) -> Iterator[str]:
             cluster = char
     if cluster:
         yield cluster
+
+
+def _flag_letter(char: str) -> bool:
+    return "\U0001f1e6" <= char <= "\U0001f1ff"
 
 
 WRAP_BELOW = 0.75
