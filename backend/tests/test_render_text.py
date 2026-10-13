@@ -201,7 +201,9 @@ def test_text_is_kept_out_of_the_window() -> None:
 
 
 def test_blank_lines_are_left_out() -> None:
-    lines = texts(render_svg(spec(headline=headline("\nנועה\n \n")), "portrait", 600, 900))
+    lines = texts(
+        render_svg(spec(headline=headline("\nנועה\n \n\u200f\u200b\n")), "portrait", 600, 900)
+    )
     assert [(t["body"], t["y"]) for t in lines] == [("נועה", "810")]
 
 

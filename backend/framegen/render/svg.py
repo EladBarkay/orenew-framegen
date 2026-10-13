@@ -45,7 +45,7 @@ from framegen.spec.models import (
     Window,
     ratio,
 )
-from framegen.spec.text import Orientation, Slot, TextStamp, slot_in
+from framegen.spec.text import Orientation, Slot, TextStamp, slot_in, visible
 
 LINE_HEIGHT = 1.2
 """Between the baselines of a text's lines, as a share of its size."""
@@ -373,7 +373,7 @@ class _Frame:
         cx, cy = area.x + area.width / 2, area.y + area.height / 2
         turn = "" if area.upright else f' transform="rotate(-90 {_n(cx)} {_n(cy)})"'
         # Blank lines would only push the text off-centre.
-        lines = [line for line in text.split("\n") if line.strip()]
+        lines = [line for line in text.split("\n") if any(visible(c) for c in line)]
         # The lines never run past their area's depth; fitting them along it is T-13b.
         size_px = min(size * self.short, area.depth / (len(lines) * LINE_HEIGHT))
         first = cy - (len(lines) - 1) * LINE_HEIGHT * size_px / 2

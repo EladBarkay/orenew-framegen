@@ -97,14 +97,14 @@ _BLANKS = {"\u115f", "\u1160", "\u3164", "\uffa0", "\u2800"}
 nothing."""
 
 
-def _visible(char: str) -> bool:
+def visible(char: str) -> bool:
     # A letter, digit, punctuation mark or symbol; marks, spaces and format characters
     # draw nothing on their own.
     return unicodedata.category(char)[0] in "LNPS" and char not in _BLANKS
 
 
 def _not_blank(value: object) -> object:
-    if isinstance(value, str) and not any(_visible(char) for char in value):
+    if isinstance(value, str) and not any(visible(char) for char in value):
         raise PydanticCustomError("spec_text_empty", "The text is empty.")
     return value
 
