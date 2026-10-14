@@ -9,6 +9,7 @@ import re
 import unicodedata
 from typing import Annotated, Literal, Self
 
+from babel import Locale, UnknownLocaleError
 from pydantic import AfterValidator, BeforeValidator, Discriminator, Field, Tag, model_validator
 from pydantic_core import PydanticCustomError
 
@@ -137,6 +138,16 @@ class Headline(TextStyle):
 DATE_FIELDS = {"d", "dd", "M", "MM", "MMM", "MMMM", "yy", "yyyy"}
 
 
+def _known_locale(value: str) -> str:
+    try:
+        Locale.parse(value, sep="-")
+    except (UnknownLocaleError, ValueError):
+        raise PydanticCustomError(
+            "spec_date_locale", "There is no locale '{locale}'.", {"locale": value}
+        ) from None
+    return value
+
+
 class GregorianFormat(SpecModel):
     calendar: Literal["gregorian"]
     pattern: str | None = Field(
@@ -147,7 +158,11 @@ class GregorianFormat(SpecModel):
         examples=["dd.MM.yyyy", "d.M.yy", "d MMMM yyyy"],
     )
     style: Literal["short", "medium", "long", "full"] | None = None
-    locale: str = Field(default="he", pattern=r"^[a-z]{2,3}(-[A-Z][a-z]{3})?(-[A-Z]{2})?$")
+    locale: Annotated[
+        str,
+        Field(pattern=r"^[a-z]{2,3}(-[A-Z][a-z]{3})?(-[A-Z]{2})?$"),
+        AfterValidator(_known_locale),
+    ] = "he"
 
     @model_validator(mode="after")
     def _one_way(self) -> Self:

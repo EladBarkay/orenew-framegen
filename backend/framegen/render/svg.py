@@ -4,9 +4,9 @@ The SVG is rasterised by Chromium (T-12b). Everything is computed here in pixels
 same spec, size and images always give the same text, and so the same pixels.
 
 Layers are drawn in their order, the first at the bottom. Each is cut by the window,
-except layers marked to overlap it. The headline and a text stamp go on top, in their
-slots, with the fonts embedded (render.text); dates come with T-14 and image stamps with
-T-15.
+except layers marked to overlap it. The headline, the date (render.dates) and a text
+stamp go on top, in their slots, with the fonts embedded (render.text); image stamps come
+with T-15.
 
 Only placement follows the reading direction (start is the right side in Hebrew).
 Rotation is clockwise and artwork is drawn as given in both directions: flipping it is
@@ -23,6 +23,7 @@ from dataclasses import dataclass
 from typing import Literal
 from xml.sax.saxutils import escape, quoteattr
 
+from framegen.render.dates import date_text
 from framegen.render.measure import fit
 from framegen.render.text import (
     HEADLINE_SHARE,
@@ -329,9 +330,9 @@ class _Frame:
     def texts(
         self, spec: FrameSpec, orientation: Orientation, window: Rect, fonts: Fonts
     ) -> Iterator[str]:
-        """The headline and a text stamp, each in its slot."""
+        """The headline, the date and a text stamp, each in its slot."""
         box = (window.x, window.y, window.width, window.height)
-        # Every component's slot counts, including those not drawn yet (dates, T-14), so
+        # Every component's slot counts, including stamps not drawn yet (images, T-15), so
         # adding them later does not move the others.
         taken = [
             slot_in(part.slot, orientation)
@@ -356,17 +357,28 @@ class _Frame:
                 headline.color,
                 1,
             )
-        stamp = spec.stamp
-        if isinstance(stamp, TextStamp):
-            slot = slot_in(stamp.slot, orientation)
+
+        def own_area(slot: Slot) -> Area:
             if slot == "under-headline":
                 assert under is not None  # the spec has a headline (FrameSpec checks it)
-                area = under
-            else:
-                area = area_of(slot)
+                return under
+            return area_of(slot)
+
+        if spec.date is not None:
+            date, text = spec.date, date_text(spec.date)
+            yield self.text(
+                text,
+                own_area(slot_in(date.slot, orientation)),
+                fonts.use(date.font, text),
+                date.size,
+                date.color,
+                1,
+            )
+        stamp = spec.stamp
+        if isinstance(stamp, TextStamp):
             yield self.text(
                 stamp.text,
-                area,
+                own_area(slot_in(stamp.slot, orientation)),
                 fonts.use(stamp.font, stamp.text),
                 stamp.size,
                 stamp.color,
