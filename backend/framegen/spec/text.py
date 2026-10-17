@@ -15,7 +15,7 @@ from pydantic import AfterValidator, BeforeValidator, Discriminator, Field, Tag,
 from pydantic_core import PydanticCustomError
 
 from framegen.fonts import BUILT_IN
-from framegen.spec.models import Color, Fraction, SpecModel
+from framegen.spec.models import AssetRef, Color, Fraction, SpecModel
 
 Slot = Literal[
     "top-band",
@@ -304,7 +304,7 @@ class TextStamp(StampBase, TextStyle):
 
 class ImageStamp(StampBase, MarkSize):
     source: Literal["image"]
-    image: str = Field(pattern=r"^ast_[a-z2-7]{26}$")
+    image: AssetRef
 
 
 class BrandText(SpecModel):

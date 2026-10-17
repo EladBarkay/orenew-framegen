@@ -419,6 +419,7 @@
           },
           "version": {
             "description": "The version this edit started from (0 if the kit was never saved).",
+            "maximum": 2147483646.0,
             "minimum": 0.0,
             "title": "Version",
             "type": "integer"

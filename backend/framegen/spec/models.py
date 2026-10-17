@@ -32,6 +32,9 @@ class SpecModel(BaseModel):
 
 
 Fraction = Annotated[float, Field(ge=0, le=1, allow_inf_nan=False)]
+
+AssetRef = Annotated[str, Field(pattern=r"^ast_[a-z2-7]{26}$")]
+"""An upload of the workspace's (framegen.api.assets)."""
 """A share of the frame: 0 is nothing, 1 is all of it. Also used for opacity."""
 
 PositiveFraction = Annotated[float, Field(gt=0, le=1, allow_inf_nan=False)]
@@ -109,10 +112,8 @@ class Window(SpecModel):
         description="Corner radius for 'rounded', as a share of the window's own shorter "
         "side: 0.5 makes the short sides fully round.",
     )
-    mask: str | None = Field(
-        default=None,
-        pattern=r"^ast_[a-z2-7]{26}$",
-        description="For 'mask': the asset whose alpha is the window's shape.",
+    mask: AssetRef | None = Field(
+        default=None, description="For 'mask': the asset whose alpha is the window's shape."
     )
     portrait: WindowPlacement
     landscape: WindowPlacement

@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import insert
 
 from framegen.api.app import create_app
-from framegen.brand import NoBrandStamp, brand_inputs
+from framegen.brand import FontNotInKit, NoBrandStamp, brand_inputs
 from framegen.db.engine import async_engine, sync_engine
 from framegen.db.tables import assets, memberships
 from framegen.render.svg import Image
@@ -65,7 +65,7 @@ def upload(settings: Settings, workspace_id: str, **row: Any) -> str:
     return asset_id
 
 
-def kit(version: int = 0, **content: Any) -> dict[str, Any]:
+def kit(version: Any = 0, **content: Any) -> dict[str, Any]:
     return {"version": version, **content}
 
 
@@ -246,3 +246,32 @@ def test_a_frame_using_the_kit_needs_a_default_stamp(
         inputs(settings, ws, frame(stamp={"source": "brand-kit", "slot": "top-end"}), {})
     stamp, _ = inputs(settings, ws, frame(), {})
     assert stamp is None
+
+
+@pytest.mark.parametrize(
+    "body",
+    [kit(2**31 - 1), kit("1"), kit(stamps=[TEXT_STAMP, TEXT_STAMP], default_stamp=True),
+     kit(stamps=[TEXT_STAMP], default_stamp=0, stamp_placement={"size": 0.3})],
+)  # fmt: skip
+def test_a_bad_kit_is_refused_before_anything_is_stored(
+    client: TestClient, body: dict[str, Any]
+) -> None:
+    answer = put(client, workspace(client), body)
+    assert (answer.status_code, answer.json()["error"]["code"]) == (422, "validation_failed")
+
+
+def test_a_font_is_in_the_kit_once(client: TestClient, settings: Settings) -> None:
+    ws = workspace(client)
+    font = upload(settings, ws, kind="font", content_type="font/ttf")
+    twice = [{"asset": font, "name": "A"}, {"asset": font, "name": "B"}]
+    assert put(client, ws, kit(fonts=twice)).status_code == 422
+
+
+def test_a_frame_naming_a_font_the_kit_lost_is_a_clear_error(
+    client: TestClient, settings: Settings
+) -> None:
+    ws = workspace(client)
+    spec = frame(headline={"text": "נועה", "font": "font_" + "q" * 26, "color": "#000000",
+                           "size": 0.05, "slot": "bottom-band"})  # fmt: skip
+    with pytest.raises(FontNotInKit, match="font_q"):
+        inputs(settings, ws, spec, {})
