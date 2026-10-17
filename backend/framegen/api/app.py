@@ -7,7 +7,7 @@ from fastapi import FastAPI, Request, Response, status
 from pydantic import BaseModel
 
 from framegen import __version__
-from framegen.api import assets, auth, jobs, workspaces
+from framegen.api import assets, auth, brand_kit, jobs, workspaces
 from framegen.api.errors import ERROR_RESPONSES, install_error_handlers
 from framegen.api.idempotency import (
     IdempotencyMiddleware,
@@ -115,6 +115,7 @@ def create_app(
     app.include_router(auth.router)
     app.include_router(workspaces.router)
     app.include_router(assets.router)
+    app.include_router(brand_kit.router)
     app.include_router(jobs.router)
 
     @app.get("/v1/health", operation_id="getHealth", tags=["system"])

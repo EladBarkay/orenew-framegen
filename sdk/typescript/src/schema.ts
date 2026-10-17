@@ -234,6 +234,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/workspaces/{workspace_id}/brand-kit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Brand Kit
+         * @description The workspace's brand kit; empty (version 0) until first saved.
+         */
+        get: operations["getBrandKit"];
+        /**
+         * Save Brand Kit
+         * @description Replace the brand kit (admins). Refused with 409 brand_kit_changed if it was saved
+         *     since `version`: read it again and redo the edit.
+         */
+        put: operations["saveBrandKit"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/workspaces/{workspace_id}/invitations": {
         parameters: {
             query?: never;
@@ -454,6 +479,120 @@ export interface components {
              * @description In bytes.
              */
             size: number;
+        };
+        /** BrandColor */
+        BrandColor: {
+            /**
+             * Color
+             * @example #c9a24a
+             * @example #00000080
+             */
+            color: string;
+            /** Name */
+            name?: string | null;
+        };
+        /** BrandFont */
+        BrandFont: {
+            /**
+             * Asset
+             * @description A TrueType or OpenType font upload (kind font).
+             */
+            asset: string;
+            /**
+             * Name
+             * @description Shown when choosing fonts.
+             */
+            name: string;
+        };
+        /** BrandFontInKit */
+        BrandFontInKit: {
+            /**
+             * Asset
+             * @description A TrueType or OpenType font upload (kind font).
+             */
+            asset: string;
+            /**
+             * Id
+             * @description How frame specs name the font: font_ and the asset's ID.
+             */
+            id: string;
+            /**
+             * Name
+             * @description Shown when choosing fonts.
+             */
+            name: string;
+        };
+        /** BrandImageStamp */
+        BrandImageStamp: {
+            /** Asset */
+            asset: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "image";
+        };
+        /** BrandKit */
+        BrandKit: {
+            /** Colors */
+            colors: components["schemas"]["BrandColor"][];
+            /** Default Stamp */
+            default_stamp: number | null;
+            /** Fonts */
+            fonts: components["schemas"]["BrandFontInKit"][];
+            stamp_placement: components["schemas"]["StampPlacement"];
+            /** Stamps */
+            stamps: (components["schemas"]["BrandTextStamp"] | components["schemas"]["BrandImageStamp"])[];
+            /** Updated At */
+            updated_at: string | null;
+            /**
+             * Version
+             * @description 0 until the kit is first saved.
+             */
+            version: number;
+        };
+        /** BrandKitSave */
+        BrandKitSave: {
+            /** Colors */
+            colors?: components["schemas"]["BrandColor"][];
+            /**
+             * Default Stamp
+             * @description The stamp frames use (its index in stamps).
+             */
+            default_stamp?: number | null;
+            /** Fonts */
+            fonts?: components["schemas"]["BrandFont"][];
+            stamp_placement?: components["schemas"]["StampPlacement"];
+            /** Stamps */
+            stamps?: (components["schemas"]["BrandTextStamp"] | components["schemas"]["BrandImageStamp"])[];
+            /**
+             * Version
+             * @description The version this edit started from (0 if the kit was never saved).
+             */
+            version: number;
+        };
+        /** BrandTextStamp */
+        BrandTextStamp: {
+            /**
+             * Color
+             * @example #c9a24a
+             * @example #00000080
+             */
+            color: string;
+            /**
+             * Font
+             * @description A workspace font (font_…) or a built-in font by name: heebo-light, heebo, heebo-medium, heebo-bold, heebo-extrabold, heebo-black, rubik, rubik-bold, varela-round, secular-one, frank-ruhl-libre, frank-ruhl-libre-bold, david-libre, david-libre-bold, bellefair, suez-one, karantina, karantina-bold, amatic-sc, amatic-sc-bold, playpen-sans-hebrew, playpen-sans-hebrew-bold, playfair-display, playfair-display-bold, great-vibes.
+             * @example heebo
+             * @example amatic-sc-bold
+             */
+            font: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "text";
+            /** Text */
+            text: string;
         };
         /** CreatedAsset */
         CreatedAsset: {
@@ -678,6 +817,41 @@ export interface components {
             name: string;
             /** Password */
             password: string;
+        };
+        /** SlotPerOrientation */
+        SlotPerOrientation: {
+            /**
+             * Landscape
+             * @enum {string}
+             */
+            landscape: "top-band" | "bottom-band" | "top-start" | "top-end" | "bottom-start" | "bottom-end" | "under-headline" | "start-edge" | "end-edge";
+            /**
+             * Portrait
+             * @enum {string}
+             */
+            portrait: "top-band" | "bottom-band" | "top-start" | "top-end" | "bottom-start" | "bottom-end" | "under-headline" | "start-edge" | "end-edge";
+        };
+        /**
+         * StampPlacement
+         * @description Where new frames put the stamp, and how big.
+         */
+        StampPlacement: {
+            /**
+             * Opacity
+             * @default 1
+             */
+            opacity: number;
+            /**
+             * Size
+             * @description As a share of the frame's shorter side: an image's longest side, or the largest height of a text stamp from the brand kit (at most 0.25, as for any text).
+             * @default 0.08
+             */
+            size: number;
+            /**
+             * Slot
+             * @default end-edge
+             */
+            slot: ("top-band" | "bottom-band" | "top-start" | "top-end" | "bottom-start" | "bottom-end" | "under-headline" | "start-edge" | "end-edge") | components["schemas"]["SlotPerOrientation"];
         };
         /** Upload */
         Upload: {
@@ -1198,6 +1372,74 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Asset"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getBrandKit: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The workspace's ID. */
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrandKit"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    saveBrandKit: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The workspace's ID. */
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BrandKitSave"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrandKit"];
                 };
             };
             /** @description Error */
