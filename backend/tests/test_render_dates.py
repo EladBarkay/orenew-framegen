@@ -87,7 +87,8 @@ def test_the_text_can_be_typed_by_hand() -> None:
     assert date_text(date(override="מוצ״ש, ערב חג")) == "מוצ״ש, ערב חג"
 
 
-def test_an_unknown_locale_is_refused() -> None:
+@pytest.mark.parametrize("locale", ["xx", "und", "iw"])
+def test_an_unknown_locale_is_refused(locale: str) -> None:
     inset = {"top": 0.1, "bottom": 0.2, "start": 0.1, "end": 0.1}
     with pytest.raises(SpecInvalid) as error:
         read_spec({
@@ -98,7 +99,7 @@ def test_an_unknown_locale_is_refused() -> None:
                 {"kind": "vector", "shape": "rectangle", "color": "#336699",
                  "box": {"x": 0, "y": 0, "width": 1, "height": 1}}]},
             "date": {**date().model_dump(by_alias=True, mode="json"),
-                     "formats": [{"calendar": "gregorian", "style": "long", "locale": "xx"}]},
+                     "formats": [{"calendar": "gregorian", "style": "long", "locale": locale}]},
         })  # fmt: skip
     assert [problem.code for problem in error.value.problems] == ["spec_date_locale"]
 

@@ -1,12 +1,14 @@
 """A frame's date as text (DESIGN.md 4.3, T-14).
 
-Gregorian formats go through Babel, which uses the same Unicode CLDR data as the
-browser's Intl.DateTimeFormat, so a pattern or style reads the same in any locale.
+Gregorian formats go through Babel, which uses the Unicode CLDR data behind the
+browser's Intl.DateTimeFormat: its styles read as the browser's do, and a pattern is a
+CLDR pattern of day, month and year fields only (the spec allows no others).
 Hebrew formats go through pyluach. An evening event (afterSunset) falls on the next
 Hebrew date; the Gregorian date stays as given.
 """
 
 import datetime
+import functools
 
 from babel import Locale
 from babel.dates import format_date
@@ -24,11 +26,16 @@ def date_text(date: Date) -> str:
     return "\n".join(parts) if date.joiner is None else date.joiner.join(parts)
 
 
+@functools.cache
+def _locale(tag: str) -> Locale:
+    return Locale.parse(tag, sep="-")
+
+
 def _format(date: Date, format: DateFormat) -> str:
     if isinstance(format, GregorianFormat):
         pattern = format.pattern or format.style
         assert pattern is not None  # one of them is given (GregorianFormat checks it)
-        return str(format_date(date.value, pattern, locale=Locale.parse(format.locale, sep="-")))
+        return str(format_date(date.value, pattern, locale=_locale(format.locale)))
     day = date.value + datetime.timedelta(days=1 if date.after_sunset else 0)
     hebrew = HebrewDate.from_pydate(day)
     if format.numerals == "hebrew":

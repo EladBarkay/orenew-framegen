@@ -139,9 +139,13 @@ DATE_FIELDS = {"d", "dd", "M", "MM", "MMM", "MMMM", "yy", "yyyy"}
 
 
 def _known_locale(value: str) -> str:
+    # A locale CLDR has under this name: not "und", nor an old alias such as "iw", which
+    # would be read as another locale.
     try:
-        Locale.parse(value, sep="-")
+        known = Locale.parse(value, sep="-").language == value.split("-")[0] != "und"
     except (UnknownLocaleError, ValueError):
+        known = False
+    if not known:
         raise PydanticCustomError(
             "spec_date_locale", "There is no locale '{locale}'.", {"locale": value}
         ) from None
