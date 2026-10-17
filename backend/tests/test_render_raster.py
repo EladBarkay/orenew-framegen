@@ -17,6 +17,7 @@ from framegen.render import check
 from framegen.render.raster import MAX_SIDE, Rasteriser
 from framegen.render.svg import render_svg
 from framegen.spec import read_spec
+from tests import test_render_stamps as stamps
 
 pytestmark = pytest.mark.skipif(
     not os.environ.get("FRAMEGEN_TEST_CHROMIUM"), reason="set FRAMEGEN_TEST_CHROMIUM=1"
@@ -219,3 +220,14 @@ def test_an_isolated_date_reads_left_to_right_on_a_hebrew_line() -> None:
     reversed_ = svg.replace("\u2068", "").replace("\u2069", "")
     (rtl,) = rasterise((reversed_, 600, 900))
     assert ink(rtl).tobytes() != ink(ltr).tobytes(), "without the isolate it would turn"
+
+
+def test_an_image_stamp_is_drawn_where_its_slot_is() -> None:
+    stamp = {"source": "image", "image": stamps.LOGO, "slot": "end-edge", "size": 0.08}
+    svg = render_svg(stamps.spec(stamp), "portrait", 600, 900,
+                     images={stamps.LOGO: stamps.png(200, 100)})  # fmt: skip
+    (drawn,) = rasterise((svg, 600, 900))
+    red = Image.open(io.BytesIO(drawn)).convert("RGB").getchannel("R")
+    box = red.point(lambda value: 255 if value > 0xCC else 0).getbbox()
+    # 48 x 24, turned to run up the left edge: 24 wide and 48 tall, centred on (30, 405).
+    assert box == (18, 381, 42, 429)
