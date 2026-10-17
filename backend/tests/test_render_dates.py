@@ -7,7 +7,9 @@ import pytest
 
 from framegen.render.dates import FSI, PDI
 from framegen.render.dates import date_text as isolated_text
+from framegen.render.measure import fit
 from framegen.render.svg import render_svg
+from framegen.render.text import Fonts
 from framegen.spec import SpecInvalid, read_spec
 from framegen.spec.text import Date
 
@@ -100,6 +102,12 @@ def test_the_text_can_be_typed_by_hand() -> None:
     assert date_text(date(override="מוצ״ש, ערב חג")) == "מוצ״ש, ערב חג"
 
 
+@pytest.mark.parametrize("locale", ["zh-CN", "zh-Hant-TW", "sr-RS", "pa-IN", "en-GB", "he"])
+def test_a_common_locale_tag_is_taken(locale: str) -> None:
+    assert date_text(date("2026-10-12", {"calendar": "gregorian", "style": "long",
+                                         "locale": locale}))  # fmt: skip
+
+
 @pytest.mark.parametrize("locale", ["xx", "und", "iw", "en-UK", "en-ZZ", "he-Latn", "zh-Cyrl"])
 def test_an_unknown_locale_is_refused(locale: str) -> None:
     inset = {"top": 0.1, "bottom": 0.2, "start": 0.1, "end": 0.1}
@@ -141,3 +149,16 @@ def test_the_date_is_drawn_under_the_headline_one_line_per_format() -> None:
     # The headline's area ends at 819.6 (T-13a): both date lines are below it.
     ys = [float(y) for y in re.findall(r'<text x="[\d.]+" y="([\d.]+)"', svg)]
     assert ys[0] < 819.6 < ys[1] < ys[2]
+
+
+def test_a_wrapped_date_breaks_only_between_formats() -> None:
+    gregorian = {"calendar": "gregorian", "style": "full", "locale": "en"}
+    text = isolated_text(date("2026-10-12", gregorian, HEBREW))
+    layout = fit([text], Fonts({}).use("heebo", text).measure, length=200, depth=100, size=40)
+    # Two lines, each format whole within one of them: the break is at the joiner.
+    assert len(layout.lines) == 2
+    assert f"{FSI}Monday, October 12, 2026{PDI}" in layout.lines[0]
+    assert f"{FSI}א׳ חשון תשפ״ז{PDI}" in layout.lines[1]
+    one = isolated_text(date("2026-10-12", {"calendar": "gregorian", "pattern": "yyyy MM dd"}))
+    alone = fit([one], Fonts({}).use("heebo", one).measure, length=50, depth=100, size=40)
+    assert alone.lines == [one]  # no break inside its isolate: it shrinks instead

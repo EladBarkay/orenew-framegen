@@ -139,15 +139,24 @@ class Headline(TextStyle):
 DATE_FIELDS = {"d", "dd", "M", "MM", "MMM", "MMMM", "yy", "yyyy"}
 
 
-@functools.cache
+@functools.lru_cache(maxsize=256)
 def parse_locale(tag: str) -> Locale | None:
-    """The CLDR locale with exactly this name, or None. Not one CLDR would put in its
-    place: "und", an old alias ("iw", "en-UK") or a script or region it does not have."""
+    """The CLDR locale for a tag, or None if CLDR would read it as another: "und", an old
+    alias ("iw", "en-UK"), or a script or region it does not have. CLDR may add subtags
+    ("zh-CN" is zh_Hans_CN), but each one the tag gives must stay as given."""
     try:
         locale = Locale.parse(tag, sep="-")
     except (UnknownLocaleError, ValueError):
         return None
-    return locale if str(locale) == tag.replace("-", "_") else None
+    language, *rest = tag.split("-")
+    script = next((part for part in rest if len(part) == 4), None)
+    region = next((part for part in rest if len(part) == 2), None)
+    same = (
+        locale.language == language
+        and (script is None or locale.script == script)
+        and (region is None or locale.territory == region)
+    )
+    return locale if same else None
 
 
 def _known_locale(value: str) -> str:
