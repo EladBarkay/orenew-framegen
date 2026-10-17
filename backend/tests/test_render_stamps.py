@@ -1,38 +1,13 @@
 """Image and brand-kit stamps (T-15a)."""
 
-import base64
-import io
 import re
-from typing import Any
 
 import pytest
-from PIL import Image as PILImage
 
-from framegen.render.svg import Image, MissingBrandStamp, MissingImage, render_svg
-from framegen.spec import read_spec
+from framegen.render.svg import MissingBrandStamp, MissingImage, render_svg
+from framegen.render.text import NoRoom
 from framegen.spec.text import BrandText
-
-LOGO = "ast_" + "l" * 26
-
-
-def png(width: int, height: int, color: str = "#ff0000") -> Image:
-    out = io.BytesIO()
-    PILImage.new("RGBA", (width, height), color).save(out, "PNG")
-    href = "data:image/png;base64," + base64.b64encode(out.getvalue()).decode()
-    return Image(href, width, height)
-
-
-def spec(stamp: dict[str, Any]) -> Any:
-    inset = {"top": 0.1, "bottom": 0.2, "start": 0.1, "end": 0.1}
-    return read_spec({
-        "specVersion": 1, "aspect": {"portrait": "2:3", "landscape": "3:2"},
-        "window": {"shape": "rectangle", "portrait": {"inset": inset},
-                   "landscape": {"inset": inset}},
-        "decoration": {"archetype": "surround", "layers": [
-            {"kind": "vector", "shape": "rectangle", "color": "#336699",
-             "box": {"x": 0, "y": 0, "width": 1, "height": 1}}]},
-        "stamp": stamp,
-    })  # fmt: skip
+from tests.stamps import LOGO, png, spec
 
 
 def image_attributes(svg: str) -> dict[str, str]:
@@ -99,3 +74,17 @@ def test_the_brand_kits_image_stamp_is_drawn_like_an_image_stamp() -> None:
 def test_a_spec_using_the_brand_kit_needs_its_stamp() -> None:
     with pytest.raises(MissingBrandStamp):
         render_svg(spec({"source": "brand-kit", "slot": "top-end"}), "portrait", 600, 900)
+
+
+def test_a_stamp_too_thin_for_its_slot_is_an_error() -> None:
+    stamp = {"source": "image", "image": LOGO, "slot": "top-end", "size": 0.5}
+    with pytest.raises(NoRoom):
+        render_svg(spec(stamp), "portrait", 600, 900, images={LOGO: png(4000, 2)})
+
+
+def test_a_brand_kit_text_stamp_is_no_taller_than_any_text() -> None:
+    stamp = {"source": "brand-kit", "slot": "bottom-band", "size": 0.5}
+    brand = BrandText(text="ש", font="heebo", color="#000000")
+    svg = render_svg(spec(stamp), "portrait", 600, 900, brand_stamp=brand)
+    sizes = [float(size) for size in re.findall(r'font-size="([\d.]+)"', svg)]
+    assert sizes and max(sizes) <= 0.25 * 600

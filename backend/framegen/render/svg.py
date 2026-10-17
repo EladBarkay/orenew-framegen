@@ -10,7 +10,9 @@ the fonts embedded (render.text).
 
 Only placement follows the reading direction (start is the right side in Hebrew).
 Rotation is clockwise and artwork is drawn as given in both directions: flipping it is
-the spec's `mirror`, since not every piece can be mirrored (a bottle with a label).
+the spec's `mirror`, since not every piece can be mirrored (a bottle with a label). The
+one turn the renderer adds is a stamp's or text's in an edge slot, which runs up the
+frame (90 degrees anticlockwise) as the owner's stamps do.
 
 Each SVG is meant to be drawn on its own, as a document or an <img>: its mask and filter
 IDs are fixed, so two inline in one page would share them.
@@ -32,6 +34,7 @@ from framegen.render.text import (
     FontFile,
     Fonts,
     FontUse,
+    NoRoom,
     slot_area,
     text_direction,
 )
@@ -48,6 +51,7 @@ from framegen.spec.models import (
     ratio,
 )
 from framegen.spec.text import (
+    MAX_TEXT_SIZE,
     BrandKitStamp,
     BrandText,
     ImageStamp,
@@ -66,7 +70,7 @@ IMAGE_HREF = re.compile(r"data:image/(png|jpeg|webp|svg\+xml);base64,[A-Za-z0-9+
 
 @dataclass(frozen=True)
 class Image:
-    """A piece's or a mask's pixels, as the renderer is given them."""
+    """A piece's, a window mask's or a stamp's pixels, as the renderer is given them."""
 
     href: str
     """A data: URL of a PNG, JPEG, WebP or SVG: the renderer loads nothing from the
@@ -148,6 +152,14 @@ def render_svg(
         "</svg>",
     ]
     return "\n".join(parts) + "\n"
+
+
+def _turn(area: Area) -> str:
+    """The transform for what runs up an edge slot: about the area's centre."""
+    if area.upright:
+        return ""
+    cx, cy = area.centre
+    return f' transform="rotate(-90 {_n(cx)} {_n(cy)})"'
 
 
 def _px(value: float) -> int:
@@ -409,7 +421,9 @@ class _Frame:
             yield self.mark(mark, area, stamp.size, stamp.opacity)
         else:
             font = fonts.use(mark.font, mark.text)
-            yield self.text(mark.text, area, font, stamp.size, mark.color, stamp.opacity)
+            # A brand-kit text stamp's size is its text height: no more than any text's.
+            size = min(stamp.size, MAX_TEXT_SIZE)
+            yield self.text(mark.text, area, font, size, mark.color, stamp.opacity)
 
     def mark(self, image: Image, area: Area, size: float, opacity: float) -> str:
         """An image centred in its area, its longest side `size` of the shorter side or
@@ -420,8 +434,9 @@ class _Frame:
             area.depth / image.height,
         )
         w, h = image.width * scale, image.height * scale
-        cx, cy = area.x + area.width / 2, area.y + area.height / 2
-        turn = "" if area.upright else f' transform="rotate(-90 {_n(cx)} {_n(cy)})"'
+        if w < 1 or h < 1:
+            raise NoRoom(f"a {image.width}x{image.height} stamp has no room in its slot")
+        (cx, cy), turn = area.centre, _turn(area)
         return (
             f'<image href={quoteattr(image.href)} x="{_n(cx - w / 2)}" y="{_n(cy - h / 2)}" '
             f'width="{_n(w)}" height="{_n(h)}" preserveAspectRatio="none"'
@@ -434,8 +449,7 @@ class _Frame:
         """The text fitted to its area (measure.fit), its lines centred together;
         `size` is a share of the shorter side. Each line is a paragraph, with its own
         direction."""
-        cx, cy = area.x + area.width / 2, area.y + area.height / 2
-        turn = "" if area.upright else f' transform="rotate(-90 {_n(cx)} {_n(cy)})"'
+        (cx, cy), turn = area.centre, _turn(area)
         # Blank lines would only push the text off-centre.
         lines = [line for line in text.split("\n") if any(visible(c) for c in line)]
         layout = fit(lines, font.measure, area.length, area.depth, size * self.short)

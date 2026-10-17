@@ -116,6 +116,10 @@ Text = Annotated[
 ]
 
 
+MAX_TEXT_SIZE = 0.25
+"""The largest text height, as a share of the frame's shorter side."""
+
+
 class TextStyle(SpecModel):
     font: FontRef
     color: Color
@@ -123,7 +127,7 @@ class TextStyle(SpecModel):
         float,
         Field(
             gt=0,
-            le=0.25,
+            le=MAX_TEXT_SIZE,
             allow_inf_nan=False,
             description="Largest text height, as a share of the frame's shorter side; the "
             "renderer shrinks the text to fit its slot.",
