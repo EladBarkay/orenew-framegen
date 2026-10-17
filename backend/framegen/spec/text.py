@@ -5,6 +5,7 @@ and editable. Each component sits in a named slot per orientation.
 """
 
 import datetime
+import functools
 import re
 import unicodedata
 from typing import Annotated, Literal, Self
@@ -138,14 +139,19 @@ class Headline(TextStyle):
 DATE_FIELDS = {"d", "dd", "M", "MM", "MMM", "MMMM", "yy", "yyyy"}
 
 
-def _known_locale(value: str) -> str:
-    # A locale CLDR has under this name: not "und", nor an old alias such as "iw", which
-    # would be read as another locale.
+@functools.cache
+def parse_locale(tag: str) -> Locale | None:
+    """The CLDR locale with exactly this name, or None. Not one CLDR would put in its
+    place: "und", an old alias ("iw", "en-UK") or a script or region it does not have."""
     try:
-        known = Locale.parse(value, sep="-").language == value.split("-")[0] != "und"
+        locale = Locale.parse(tag, sep="-")
     except (UnknownLocaleError, ValueError):
-        known = False
-    if not known:
+        return None
+    return locale if str(locale) == tag.replace("-", "_") else None
+
+
+def _known_locale(value: str) -> str:
+    if parse_locale(value) is None:
         raise PydanticCustomError(
             "spec_date_locale", "There is no locale '{locale}'.", {"locale": value}
         ) from None

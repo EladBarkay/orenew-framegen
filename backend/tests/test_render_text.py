@@ -136,6 +136,16 @@ def test_the_first_strong_character_sets_the_direction(text: str, direction: str
     assert text_direction(text, "rtl") == direction
 
 
+@pytest.mark.parametrize(
+    ("text", "direction"),
+    [("\u2068Noa\u2069 נועה", "rtl"), ("\u2068נועה\u2069 · 12.10", "ltr"),
+     ("\u206612 10\u2069", "ltr")],
+)  # fmt: skip
+def test_isolates_do_not_set_the_direction(text: str, direction: str) -> None:
+    # The last has no strong character outside its isolate: the default is used.
+    assert text_direction(text, "ltr") == direction
+
+
 def test_a_text_without_letters_takes_the_frame_direction() -> None:
     assert text_direction("12.10.26", "ltr") == "ltr"
 

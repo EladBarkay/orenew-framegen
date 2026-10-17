@@ -194,3 +194,28 @@ def test_long_text_is_fitted_to_its_slot_as_chromium_draws_it(font: str) -> None
     size = float(re.findall(r'font-size="([\d.]+)"', svg)[0])
     if size < 0.12 * 600:
         assert right - left > 0.85 * 576
+
+
+def test_an_isolated_date_reads_left_to_right_on_a_hebrew_line() -> None:
+    inset = {"top": 0.05, "bottom": 0.2, "start": 0.06, "end": 0.06}
+    spec = read_spec({
+        "specVersion": 1, "aspect": {"portrait": "2:3", "landscape": "3:2"},
+        "window": {"shape": "rectangle", "portrait": {"inset": inset},
+                   "landscape": {"inset": inset}},
+        "decoration": {"archetype": "surround", "layers": [
+            {"kind": "vector", "shape": "rectangle", "color": "#336699",
+             "box": {"x": 0, "y": 0, "width": 1, "height": 1}}]},
+        "date": {"value": "2026-10-12", "font": "heebo", "color": "#ffffff", "size": 0.06,
+                 "slot": "bottom-band",
+                 "formats": [{"calendar": "gregorian", "pattern": "dd MM yyyy"}]},
+    })  # fmt: skip
+    svg = render_svg(spec, "portrait", 600, 900)
+    assert 'direction="rtl"' in svg  # no strong character: the frame's direction
+    # The same digits drawn left to right with no isolate: the pixels must match.
+    plain = svg.replace('direction="rtl"', 'direction="ltr"')
+    plain = plain.replace("\u2068", "").replace("\u2069", "")
+    isolated, ltr = rasterise((svg, 600, 900), (plain, 600, 900))
+    assert ink(isolated).tobytes() == ink(ltr).tobytes()
+    reversed_ = svg.replace("\u2068", "").replace("\u2069", "")
+    (rtl,) = rasterise((reversed_, 600, 900))
+    assert ink(rtl).tobytes() != ink(ltr).tobytes(), "without the isolate it would turn"

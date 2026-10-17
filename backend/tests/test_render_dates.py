@@ -5,12 +5,18 @@ from typing import Any
 
 import pytest
 
-from framegen.render.dates import date_text
+from framegen.render.dates import FSI, PDI
+from framegen.render.dates import date_text as isolated_text
 from framegen.render.svg import render_svg
 from framegen.spec import SpecInvalid, read_spec
 from framegen.spec.text import Date
 
 HEBREW = {"calendar": "hebrew"}
+
+
+def date_text(date: Date) -> str:
+    """The text without its isolate marks (test_each_format_is_an_isolate checks those)."""
+    return isolated_text(date).replace(FSI, "").replace(PDI, "")
 
 
 def date(value: str = "2026-10-12", *formats: dict[str, Any], **more: Any) -> Date:
@@ -83,11 +89,18 @@ def test_formats_join_or_stack() -> None:
     )
 
 
+def test_each_format_is_an_isolate() -> None:
+    gregorian = {"calendar": "gregorian", "pattern": "dd MM yyyy"}
+    assert isolated_text(date("2026-10-12", HEBREW, gregorian)) == (
+        f"{FSI}א׳ חשון תשפ״ז{PDI} · {FSI}12 10 2026{PDI}"
+    )
+
+
 def test_the_text_can_be_typed_by_hand() -> None:
     assert date_text(date(override="מוצ״ש, ערב חג")) == "מוצ״ש, ערב חג"
 
 
-@pytest.mark.parametrize("locale", ["xx", "und", "iw"])
+@pytest.mark.parametrize("locale", ["xx", "und", "iw", "en-UK", "en-ZZ", "he-Latn", "zh-Cyrl"])
 def test_an_unknown_locale_is_refused(locale: str) -> None:
     inset = {"top": 0.1, "bottom": 0.2, "start": 0.1, "end": 0.1}
     with pytest.raises(SpecInvalid) as error:
@@ -120,7 +133,10 @@ def test_the_date_is_drawn_under_the_headline_one_line_per_format() -> None:
                  "formats": [HEBREW, {"calendar": "gregorian", "pattern": "dd.MM.yyyy"}]},
     })  # fmt: skip
     svg = render_svg(spec, "portrait", 600, 900)
-    bodies = re.findall(r'direction="(\w+)"[^>]*>([^<]*)</text>', svg)
+    bodies = [
+        (direction, body.replace(FSI, "").replace(PDI, ""))
+        for direction, body in re.findall(r'direction="(\w+)"[^>]*>([^<]*)</text>', svg)
+    ]
     assert bodies == [("rtl", "נועה ועודד"), ("rtl", "ב׳ חשון תשפ״ז"), ("rtl", "12.10.2026")]
     # The headline's area ends at 819.6 (T-13a): both date lines are below it.
     ys = [float(y) for y in re.findall(r'<text x="[\d.]+" y="([\d.]+)"', svg)]

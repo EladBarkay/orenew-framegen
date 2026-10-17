@@ -196,7 +196,8 @@ side by side.
 - **Dates:** stored as one calendar date plus `afterSunset`. Each format renders it in
   a calendar:
   - Gregorian through Unicode CLDR date patterns (d, M, y fields only) or styles, in
-    any locale CLDR has: the data behind `Intl.DateTimeFormat`, rendered with Babel.
+    any locale CLDR has: the data behind `Intl.DateTimeFormat`, rendered with Babel,
+    always with the digits 0-9.
   - Hebrew through `pyluach`, with Hebrew-letter numerals (gematria, `תשפ״ז`)
     or digits. `afterSunset` moves the Hebrew date to the next day, because evening
     events (most weddings) fall on the following Hebrew date.

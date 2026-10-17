@@ -165,12 +165,18 @@ class Fonts:
 
 
 def text_direction(text: str, default: Literal["rtl", "ltr"]) -> Literal["rtl", "ltr"]:
-    """The direction of the first strong character, as the Unicode paragraph rule says."""
+    """The direction of the first strong character, as the Unicode paragraph rule (P2)
+    says: characters inside an isolate do not count."""
+    depth = 0
     for char in text:
         kind = unicodedata.bidirectional(char)
-        if kind in ("R", "AL"):
+        if kind in ("LRI", "RLI", "FSI"):
+            depth += 1
+        elif kind == "PDI":
+            depth = max(depth - 1, 0)
+        elif depth == 0 and kind in ("R", "AL"):
             return "rtl"
-        if kind == "L":
+        elif depth == 0 and kind == "L":
             return "ltr"
     return default
 
