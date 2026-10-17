@@ -74,7 +74,7 @@ class BrandFontInKit(BrandFont):
 
 class BrandColor(Strict):
     color: Color
-    name: str | None = Field(default=None, max_length=50)
+    name: str | None = Field(default=None, min_length=1, max_length=50)
 
 
 class StampPlacement(Strict, MarkSize):
@@ -137,6 +137,10 @@ class NoBrandStamp(ValueError):
     """The spec uses the brand kit's stamp, and the kit has none."""
 
 
+class KitUploadMissing(ValueError):
+    """An upload the kit names is no longer there (or not ready)."""
+
+
 class FontNotInKit(ValueError):
     """The spec names a workspace font the kit no longer has."""
 
@@ -193,5 +197,7 @@ async def _assets(
     ).mappings()
     found = {row["id"]: dict(row) for row in rows}
     if missing := set(ids) - found.keys():
-        raise LookupError(f"the brand kit names {', '.join(sorted(missing))}: not ready uploads")
+        raise KitUploadMissing(
+            f"the brand kit names {', '.join(sorted(missing))}: no longer ready uploads"
+        )
     return found

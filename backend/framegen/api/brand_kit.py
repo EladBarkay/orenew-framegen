@@ -90,7 +90,8 @@ async def save_brand_kit(body: BrandKitSave, access: AdminAccess, engine: Engine
             raise ApiError(
                 409,
                 "brand_kit_changed",
-                "The brand kit was saved since this version. Read it again and redo the edit.",
+                "The brand kit is not at this version: it was saved since, or never. Read it "
+                "again and redo the edit.",
             )
     return _kit(content, body.version + 1, now)
 

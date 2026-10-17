@@ -32,10 +32,10 @@ class SpecModel(BaseModel):
 
 
 Fraction = Annotated[float, Field(ge=0, le=1, allow_inf_nan=False)]
+"""A share of the frame: 0 is nothing, 1 is all of it. Also used for opacity."""
 
 AssetRef = Annotated[str, Field(pattern=r"^ast_[a-z2-7]{26}$")]
 """An upload of the workspace's (framegen.api.assets)."""
-"""A share of the frame: 0 is nothing, 1 is all of it. Also used for opacity."""
 
 PositiveFraction = Annotated[float, Field(gt=0, le=1, allow_inf_nan=False)]
 

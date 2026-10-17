@@ -170,7 +170,7 @@ brand_kits = Table(
     "brand_kits",
     metadata,
     Column("workspace_id", ID, ForeignKey("workspaces.id", ondelete="CASCADE"), primary_key=True),
-    # The kit as the API shows it (framegen.api.brand_kit.BrandKitContent).
+    # The kit as the API shows it (framegen.brand.BrandKitContent).
     Column("content", JSONB, nullable=False),
     # Each save adds one; a save naming an older version is refused, so none is lost.
     Column("version", Integer, nullable=False),
