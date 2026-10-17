@@ -173,6 +173,308 @@
         "title": "AssetCreate",
         "type": "object"
       },
+      "BrandColor": {
+        "additionalProperties": false,
+        "properties": {
+          "color": {
+            "examples": [
+              "#c9a24a",
+              "#00000080"
+            ],
+            "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$",
+            "title": "Color",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 50,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "required": [
+          "color"
+        ],
+        "title": "BrandColor",
+        "type": "object"
+      },
+      "BrandFont": {
+        "additionalProperties": false,
+        "properties": {
+          "asset": {
+            "description": "A TrueType or OpenType font upload (kind font).",
+            "pattern": "^ast_[a-z2-7]{26}$",
+            "title": "Asset",
+            "type": "string"
+          },
+          "name": {
+            "description": "Shown when choosing fonts.",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "asset",
+          "name"
+        ],
+        "title": "BrandFont",
+        "type": "object"
+      },
+      "BrandFontInKit": {
+        "additionalProperties": false,
+        "properties": {
+          "asset": {
+            "description": "A TrueType or OpenType font upload (kind font).",
+            "pattern": "^ast_[a-z2-7]{26}$",
+            "title": "Asset",
+            "type": "string"
+          },
+          "id": {
+            "description": "How frame specs name the font: font_ and the asset's ID.",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "description": "Shown when choosing fonts.",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "asset",
+          "name",
+          "id"
+        ],
+        "title": "BrandFontInKit",
+        "type": "object"
+      },
+      "BrandImageStamp": {
+        "additionalProperties": false,
+        "properties": {
+          "asset": {
+            "pattern": "^ast_[a-z2-7]{26}$",
+            "title": "Asset",
+            "type": "string"
+          },
+          "kind": {
+            "const": "image",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "asset"
+        ],
+        "title": "BrandImageStamp",
+        "type": "object"
+      },
+      "BrandKit": {
+        "properties": {
+          "colors": {
+            "items": {
+              "$ref": "#/components/schemas/BrandColor"
+            },
+            "title": "Colors",
+            "type": "array"
+          },
+          "default_stamp": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Stamp"
+          },
+          "fonts": {
+            "items": {
+              "$ref": "#/components/schemas/BrandFontInKit"
+            },
+            "title": "Fonts",
+            "type": "array"
+          },
+          "stamp_placement": {
+            "$ref": "#/components/schemas/StampPlacement"
+          },
+          "stamps": {
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "image": "#/components/schemas/BrandImageStamp",
+                  "text": "#/components/schemas/BrandTextStamp"
+                },
+                "propertyName": "kind"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/BrandTextStamp"
+                },
+                {
+                  "$ref": "#/components/schemas/BrandImageStamp"
+                }
+              ]
+            },
+            "title": "Stamps",
+            "type": "array"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "version": {
+            "description": "0 until the kit is first saved.",
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "stamps",
+          "default_stamp",
+          "fonts",
+          "colors",
+          "stamp_placement",
+          "version",
+          "updated_at"
+        ],
+        "title": "BrandKit",
+        "type": "object"
+      },
+      "BrandKitSave": {
+        "additionalProperties": false,
+        "properties": {
+          "colors": {
+            "items": {
+              "$ref": "#/components/schemas/BrandColor"
+            },
+            "maxItems": 24,
+            "title": "Colors",
+            "type": "array"
+          },
+          "default_stamp": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The stamp frames use (its index in stamps).",
+            "title": "Default Stamp"
+          },
+          "fonts": {
+            "items": {
+              "$ref": "#/components/schemas/BrandFont"
+            },
+            "maxItems": 20,
+            "title": "Fonts",
+            "type": "array"
+          },
+          "stamp_placement": {
+            "$ref": "#/components/schemas/StampPlacement"
+          },
+          "stamps": {
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "image": "#/components/schemas/BrandImageStamp",
+                  "text": "#/components/schemas/BrandTextStamp"
+                },
+                "propertyName": "kind"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/BrandTextStamp"
+                },
+                {
+                  "$ref": "#/components/schemas/BrandImageStamp"
+                }
+              ]
+            },
+            "maxItems": 10,
+            "title": "Stamps",
+            "type": "array"
+          },
+          "version": {
+            "description": "The version this edit started from (0 if the kit was never saved).",
+            "maximum": 2147483646.0,
+            "minimum": 0.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version"
+        ],
+        "title": "BrandKitSave",
+        "type": "object"
+      },
+      "BrandTextStamp": {
+        "additionalProperties": false,
+        "properties": {
+          "color": {
+            "examples": [
+              "#c9a24a",
+              "#00000080"
+            ],
+            "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$",
+            "title": "Color",
+            "type": "string"
+          },
+          "font": {
+            "description": "A workspace font (font_\u2026) or a built-in font by name: heebo-light, heebo, heebo-medium, heebo-bold, heebo-extrabold, heebo-black, rubik, rubik-bold, varela-round, secular-one, frank-ruhl-libre, frank-ruhl-libre-bold, david-libre, david-libre-bold, bellefair, suez-one, karantina, karantina-bold, amatic-sc, amatic-sc-bold, playpen-sans-hebrew, playpen-sans-hebrew-bold, playfair-display, playfair-display-bold, great-vibes.",
+            "examples": [
+              "heebo",
+              "amatic-sc-bold"
+            ],
+            "maxLength": 40,
+            "pattern": "^(font_[a-z2-7]{26}|[a-z0-9]+(-[a-z0-9]+)*)$",
+            "title": "Font",
+            "type": "string"
+          },
+          "kind": {
+            "const": "text",
+            "title": "Kind",
+            "type": "string"
+          },
+          "text": {
+            "maxLength": 200,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "font",
+          "color",
+          "kind"
+        ],
+        "title": "BrandTextStamp",
+        "type": "object"
+      },
       "CreatedAsset": {
         "properties": {
           "asset": {
@@ -732,6 +1034,93 @@
           "name"
         ],
         "title": "SignUp",
+        "type": "object"
+      },
+      "SlotPerOrientation": {
+        "additionalProperties": false,
+        "properties": {
+          "landscape": {
+            "enum": [
+              "top-band",
+              "bottom-band",
+              "top-start",
+              "top-end",
+              "bottom-start",
+              "bottom-end",
+              "under-headline",
+              "start-edge",
+              "end-edge"
+            ],
+            "title": "Landscape",
+            "type": "string"
+          },
+          "portrait": {
+            "enum": [
+              "top-band",
+              "bottom-band",
+              "top-start",
+              "top-end",
+              "bottom-start",
+              "bottom-end",
+              "under-headline",
+              "start-edge",
+              "end-edge"
+            ],
+            "title": "Portrait",
+            "type": "string"
+          }
+        },
+        "required": [
+          "portrait",
+          "landscape"
+        ],
+        "title": "SlotPerOrientation",
+        "type": "object"
+      },
+      "StampPlacement": {
+        "additionalProperties": false,
+        "description": "Where new frames put the stamp, and how big.",
+        "properties": {
+          "opacity": {
+            "default": 1,
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Opacity",
+            "type": "number"
+          },
+          "size": {
+            "default": 0.08,
+            "description": "As a share of the frame's shorter side: an image's longest side, or the largest height of a text stamp from the brand kit (at most 0.25, as for any text).",
+            "exclusiveMinimum": 0.0,
+            "maximum": 0.5,
+            "title": "Size",
+            "type": "number"
+          },
+          "slot": {
+            "default": "end-edge",
+            "oneOf": [
+              {
+                "enum": [
+                  "top-band",
+                  "bottom-band",
+                  "top-start",
+                  "top-end",
+                  "bottom-start",
+                  "bottom-end",
+                  "under-headline",
+                  "start-edge",
+                  "end-edge"
+                ],
+                "type": "string"
+              },
+              {
+                "$ref": "#/components/schemas/SlotPerOrientation"
+              }
+            ],
+            "title": "Slot"
+          }
+        },
+        "title": "StampPlacement",
         "type": "object"
       },
       "Upload": {
@@ -1632,6 +2021,116 @@
         "summary": "Complete Asset",
         "tags": [
           "assets"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/brand-kit": {
+      "get": {
+        "description": "The workspace's brand kit; empty (version 0) until first saved.",
+        "operationId": "getBrandKit",
+        "parameters": [
+          {
+            "description": "The workspace's ID.",
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "description": "The workspace's ID.",
+              "maxLength": 40,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrandKit"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Get Brand Kit",
+        "tags": [
+          "brand kit"
+        ]
+      },
+      "put": {
+        "description": "Replace the brand kit (admins). Refused with 409 brand_kit_changed if it was saved\nsince `version`: read it again and redo the edit.",
+        "operationId": "saveBrandKit",
+        "parameters": [
+          {
+            "description": "The workspace's ID.",
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "description": "The workspace's ID.",
+              "maxLength": 40,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BrandKitSave"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrandKit"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Save Brand Kit",
+        "tags": [
+          "brand kit"
         ]
       }
     },

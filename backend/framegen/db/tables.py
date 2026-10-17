@@ -165,3 +165,16 @@ jobs = Table(
         postgresql_where=text("type = 'demo' AND status IN ('queued', 'running')"),
     ),
 )
+
+brand_kits = Table(
+    "brand_kits",
+    metadata,
+    Column("workspace_id", ID, ForeignKey("workspaces.id", ondelete="CASCADE"), primary_key=True),
+    # The kit as the API shows it (framegen.brand.BrandKitContent).
+    Column("content", JSONB, nullable=False),
+    # Each save adds one; a save naming an older version is refused, so none is lost.
+    Column("version", Integer, nullable=False),
+    Column("updated_by", ID, ForeignKey("users.id", ondelete="SET NULL"), nullable=True),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+    CheckConstraint("version >= 1", name="version"),
+)
