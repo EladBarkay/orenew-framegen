@@ -171,12 +171,17 @@ def fit(lines: list[str], measure: Measurer, length: float, depth: float, size: 
 
 def _two_lines(line: str, measure: Measurer) -> list[str] | None:
     """The line broken at the space that leaves its longer half shortest. Only at
-    spaces: a no-break space is there so as not to break."""
-    words = line.split(" ")
-    splits = [
-        [" ".join(words[:i]).rstrip(" "), " ".join(words[i:]).lstrip(" ")]
-        for i in range(1, len(words))
-    ]
+    spaces (a no-break space is there so as not to break), and never inside a bidi
+    isolate, whose direction would not carry over to the second line."""
+    breaks, depth = [], 0
+    for i, char in enumerate(line):
+        if char in "\u2066\u2067\u2068":
+            depth += 1
+        elif char == "\u2069":
+            depth = max(depth - 1, 0)
+        elif char == " " and depth == 0:
+            breaks.append(i)
+    splits = [[line[:i].rstrip(" "), line[i:].lstrip(" ")] for i in breaks]
     splits = [split for split in splits if all(split)]
     if not splits:
         return None

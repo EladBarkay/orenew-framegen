@@ -5,10 +5,12 @@ and editable. Each component sits in a named slot per orientation.
 """
 
 import datetime
+import functools
 import re
 import unicodedata
 from typing import Annotated, Literal, Self
 
+from babel import Locale, UnknownLocaleError
 from pydantic import AfterValidator, BeforeValidator, Discriminator, Field, Tag, model_validator
 from pydantic_core import PydanticCustomError
 
@@ -137,6 +139,34 @@ class Headline(TextStyle):
 DATE_FIELDS = {"d", "dd", "M", "MM", "MMM", "MMMM", "yy", "yyyy"}
 
 
+@functools.lru_cache(maxsize=256)
+def parse_locale(tag: str) -> Locale | None:
+    """The CLDR locale for a tag, or None if CLDR would read it as another: "und", an old
+    alias ("iw", "en-UK"), or a script or region it does not have. CLDR may add subtags
+    ("zh-CN" is zh_Hans_CN), but each one the tag gives must stay as given."""
+    try:
+        locale = Locale.parse(tag, sep="-")
+    except (UnknownLocaleError, ValueError):
+        return None
+    language, *rest = tag.split("-")
+    script = next((part for part in rest if len(part) == 4), None)
+    region = next((part for part in rest if len(part) == 2), None)
+    same = (
+        locale.language == language
+        and (script is None or locale.script == script)
+        and (region is None or locale.territory == region)
+    )
+    return locale if same else None
+
+
+def _known_locale(value: str) -> str:
+    if parse_locale(value) is None:
+        raise PydanticCustomError(
+            "spec_date_locale", "There is no locale '{locale}'.", {"locale": value}
+        ) from None
+    return value
+
+
 class GregorianFormat(SpecModel):
     calendar: Literal["gregorian"]
     pattern: str | None = Field(
@@ -147,7 +177,11 @@ class GregorianFormat(SpecModel):
         examples=["dd.MM.yyyy", "d.M.yy", "d MMMM yyyy"],
     )
     style: Literal["short", "medium", "long", "full"] | None = None
-    locale: str = Field(default="he", pattern=r"^[a-z]{2,3}(-[A-Z][a-z]{3})?(-[A-Z]{2})?$")
+    locale: Annotated[
+        str,
+        Field(pattern=r"^[a-z]{2,3}(-[A-Z][a-z]{3})?(-[A-Z]{2})?$"),
+        AfterValidator(_known_locale),
+    ] = "he"
 
     @model_validator(mode="after")
     def _one_way(self) -> Self:
