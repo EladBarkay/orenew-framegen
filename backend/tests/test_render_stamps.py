@@ -79,7 +79,9 @@ def test_a_thin_stamp_in_a_small_preview_is_still_drawn() -> None:
     stamp = {"source": "image", "image": LOGO, "slot": "bottom-band", "size": 0.08}
     svg = render_svg(spec(stamp), "portrait", 60, 90, images={LOGO: png(600, 50)})
     image = image_attributes(svg)
-    assert float(image["height"]) < 1 <= float(image["width"])
+    assert (image["width"], image["height"]) == ("4.8", "1")  # 0.4 high: a pixel instead
+    tiny = render_svg(spec(stamp), "portrait", 30, 45, images={LOGO: png(8000, 1)})
+    assert (image_attributes(tiny)["width"], image_attributes(tiny)["height"]) == ("2.4", "1")
 
 
 def test_a_brand_kit_text_stamp_is_no_taller_than_any_text() -> None:

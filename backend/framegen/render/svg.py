@@ -432,9 +432,9 @@ class _Frame:
             area.length / image.width,
             area.depth / image.height,
         )
-        # At small sizes (a preview) a thin logo can be under a pixel: it is drawn all the
-        # same, faint, rather than failing the frame. Output checks (T-18) see full sizes.
-        w, h = image.width * scale, image.height * scale
+        # At small sizes (a preview) a thin logo can come out under a pixel: it is drawn a
+        # pixel across instead, so it never vanishes and never fails the frame.
+        w, h = max(image.width * scale, 1), max(image.height * scale, 1)
         (cx, cy), turn = area.centre, _turn(area)
         return (
             f'<image href={quoteattr(image.href)} x="{_n(cx - w / 2)}" y="{_n(cy - h / 2)}" '
