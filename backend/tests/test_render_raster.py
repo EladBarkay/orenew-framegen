@@ -2,6 +2,7 @@
 installs it with `playwright install`)."""
 
 import asyncio
+import base64
 import io
 import os
 import re
@@ -10,13 +11,16 @@ from collections.abc import Iterator
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any
 
+import PIL.Image
 import pytest
 from PIL import Image
 
 from framegen.render import check
 from framegen.render.raster import MAX_SIDE, Rasteriser
+from framegen.render.svg import Image as SvgImage
 from framegen.render.svg import render_svg
 from framegen.spec import read_spec
+from tests import stamps
 
 pytestmark = pytest.mark.skipif(
     not os.environ.get("FRAMEGEN_TEST_CHROMIUM"), reason="set FRAMEGEN_TEST_CHROMIUM=1"
@@ -219,3 +223,32 @@ def test_an_isolated_date_reads_left_to_right_on_a_hebrew_line() -> None:
     reversed_ = svg.replace("\u2068", "").replace("\u2069", "")
     (rtl,) = rasterise((reversed_, 600, 900))
     assert ink(rtl).tobytes() != ink(ltr).tobytes(), "without the isolate it would turn"
+
+
+def test_an_image_stamp_is_drawn_where_its_slot_is() -> None:
+    stamp = {"source": "image", "image": stamps.LOGO, "slot": "end-edge", "size": 0.08}
+    svg = render_svg(stamps.spec(stamp), "portrait", 600, 900,
+                     images={stamps.LOGO: stamps.png(200, 100)})  # fmt: skip
+    (drawn,) = rasterise((svg, 600, 900))
+    red = Image.open(io.BytesIO(drawn)).convert("RGB").getchannel("R")
+    box = red.point(lambda value: 255 if value > 0xCC else 0).getbbox()
+    # 48 x 24, turned to run up the left edge: 24 wide and 48 tall, centred on (30, 405).
+    assert box == (18, 381, 42, 429)
+
+
+def test_an_edge_stamp_turns_anticlockwise_like_text() -> None:
+    # Red on its left half, green on its right: turned to run up the frame, its left
+    # side (where a line starts) is at the bottom.
+    halves = PIL.Image.new("RGB", (200, 100), "#00ff00")
+    halves.paste("#ff0000", (0, 0, 100, 100))
+    out = io.BytesIO()
+    halves.save(out, "PNG")
+    logo = SvgImage("data:image/png;base64," + base64.b64encode(out.getvalue()).decode(),
+                        200, 100)  # fmt: skip
+    stamp = {"source": "image", "image": stamps.LOGO, "slot": "end-edge", "size": 0.08}
+    svg = render_svg(stamps.spec(stamp), "portrait", 600, 900, images={stamps.LOGO: logo})
+    (drawn,) = rasterise((svg, 600, 900))
+    rgb = Image.open(io.BytesIO(drawn)).convert("RGB")
+    red = rgb.getchannel("R").point(lambda value: 255 if value > 0xCC else 0).getbbox()
+    green = rgb.getchannel("G").point(lambda value: 255 if value > 0xCC else 0).getbbox()
+    assert red == (18, 405, 42, 429) and green == (18, 381, 42, 405)

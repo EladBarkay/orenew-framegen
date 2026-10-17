@@ -4,13 +4,15 @@ The SVG is rasterised by Chromium (T-12b). Everything is computed here in pixels
 same spec, size and images always give the same text, and so the same pixels.
 
 Layers are drawn in their order, the first at the bottom. Each is cut by the window,
-except layers marked to overlap it. The headline, the date (render.dates) and a text
-stamp go on top, in their slots, with the fonts embedded (render.text); image stamps come
-with T-15.
+except layers marked to overlap it. The headline, the date (render.dates) and the
+stamp (text or image, given here or from the brand kit) go on top, in their slots, with
+the fonts embedded (render.text).
 
 Only placement follows the reading direction (start is the right side in Hebrew).
 Rotation is clockwise and artwork is drawn as given in both directions: flipping it is
-the spec's `mirror`, since not every piece can be mirrored (a bottle with a label).
+the spec's `mirror`, since not every piece can be mirrored (a bottle with a label). The
+one turn the renderer adds is a stamp's or text's in an edge slot, which runs up the
+frame (90 degrees anticlockwise) as the owner's stamps do.
 
 Each SVG is meant to be drawn on its own, as a document or an <img>: its mask and filter
 IDs are fixed, so two inline in one page would share them.
@@ -47,7 +49,17 @@ from framegen.spec.models import (
     Window,
     ratio,
 )
-from framegen.spec.text import Orientation, Slot, TextStamp, slot_in, visible
+from framegen.spec.text import (
+    MAX_TEXT_SIZE,
+    BrandKitStamp,
+    BrandText,
+    ImageStamp,
+    Orientation,
+    Slot,
+    TextStamp,
+    slot_in,
+    visible,
+)
 
 Direction = Literal["rtl", "ltr"]
 """Reading direction: in right-to-left text (Hebrew), start is the right side."""
@@ -57,7 +69,7 @@ IMAGE_HREF = re.compile(r"data:image/(png|jpeg|webp|svg\+xml);base64,[A-Za-z0-9+
 
 @dataclass(frozen=True)
 class Image:
-    """A piece's or a mask's pixels, as the renderer is given them."""
+    """A piece's, a window mask's or a stamp's pixels, as the renderer is given them."""
 
     href: str
     """A data: URL of a PNG, JPEG, WebP or SVG: the renderer loads nothing from the
@@ -87,6 +99,10 @@ class MissingImage(ValueError):
     pass
 
 
+class MissingBrandStamp(ValueError):
+    pass
+
+
 def render_svg(
     spec: FrameSpec,
     orientation: Orientation,
@@ -96,9 +112,11 @@ def render_svg(
     direction: Direction = "rtl",
     images: Mapping[str, Image] | None = None,
     fonts: Mapping[str, FontFile] | None = None,
+    brand_stamp: BrandText | Image | None = None,
 ) -> str:
     """The frame at width x height pixels, with a transparent background. `images` holds
-    every piece and window mask the spec names, and `fonts` every workspace font, by ID."""
+    every piece, window mask and stamp image the spec names, and `fonts` every workspace
+    font, by ID. `brand_stamp` is the brand kit's stamp, for a spec that uses it."""
     if width < 1 or height < 1:
         raise ValueError("the size must be at least 1x1 pixels")
     if direction not in ("rtl", "ltr"):
@@ -113,7 +131,7 @@ def render_svg(
     if window.width < 1 or window.height < 1:
         raise ValueError(f"{width}x{height} pixels is too small for the window")
     used = Fonts(fonts or {})
-    texts = list(frame.texts(spec, orientation, window, used))
+    texts = list(frame.texts(spec, orientation, window, used, brand_stamp))
     style = used.style()
     parts = [
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
@@ -133,6 +151,14 @@ def render_svg(
         "</svg>",
     ]
     return "\n".join(parts) + "\n"
+
+
+def _turn(area: Area) -> str:
+    """The transform for what runs up an edge slot: about the area's centre."""
+    if area.upright:
+        return ""
+    cx, cy = area.centre
+    return f' transform="rotate(-90 {_n(cx)} {_n(cy)})"'
 
 
 def _px(value: float) -> int:
@@ -328,12 +354,15 @@ class _Frame:
     # Text.
 
     def texts(
-        self, spec: FrameSpec, orientation: Orientation, window: Rect, fonts: Fonts
+        self,
+        spec: FrameSpec,
+        orientation: Orientation,
+        window: Rect,
+        fonts: Fonts,
+        brand_stamp: BrandText | Image | None,
     ) -> Iterator[str]:
-        """The headline, the date and a text stamp, each in its slot."""
+        """The headline, the date and the stamp, each in its slot."""
         box = (window.x, window.y, window.width, window.height)
-        # Every component's slot counts, including stamps not drawn yet (images, T-15), so
-        # adding them later does not move the others.
         taken = [
             slot_in(part.slot, orientation)
             for part in (spec.headline, spec.date, spec.stamp)
@@ -375,15 +404,43 @@ class _Frame:
                 1,
             )
         stamp = spec.stamp
-        if isinstance(stamp, TextStamp):
-            yield self.text(
-                stamp.text,
-                own_area(slot_in(stamp.slot, orientation)),
-                fonts.use(stamp.font, stamp.text),
-                stamp.size,
-                stamp.color,
-                stamp.opacity,
-            )
+        if stamp is None:
+            return
+        area = own_area(slot_in(stamp.slot, orientation))
+        mark: TextStamp | BrandText | Image
+        if isinstance(stamp, BrandKitStamp):
+            if brand_stamp is None:
+                raise MissingBrandStamp("the spec uses the brand kit's stamp; none was given")
+            mark = brand_stamp
+        elif isinstance(stamp, ImageStamp):
+            mark = self.image(stamp.image)
+        else:
+            mark = stamp
+        if isinstance(mark, Image):
+            yield self.mark(mark, area, stamp.size, stamp.opacity)
+        else:
+            font = fonts.use(mark.font, mark.text)
+            # A brand-kit text stamp's size is its text height: no more than any text's.
+            size = min(stamp.size, MAX_TEXT_SIZE)
+            yield self.text(mark.text, area, font, size, mark.color, stamp.opacity)
+
+    def mark(self, image: Image, area: Area, size: float, opacity: float) -> str:
+        """An image centred in its area, its longest side `size` of the shorter side or
+        less, so it fits; turned to run up the frame in an edge slot, like text."""
+        scale = min(
+            size * self.short / max(image.width, image.height),
+            area.length / image.width,
+            area.depth / image.height,
+        )
+        # At small sizes (a preview) a thin logo can come out under a pixel: it is drawn a
+        # pixel across instead, so it never vanishes and never fails the frame.
+        w, h = max(image.width * scale, 1), max(image.height * scale, 1)
+        (cx, cy), turn = area.centre, _turn(area)
+        return (
+            f'<image href={quoteattr(image.href)} x="{_n(cx - w / 2)}" y="{_n(cy - h / 2)}" '
+            f'width="{_n(w)}" height="{_n(h)}" preserveAspectRatio="none"'
+            f"{_opacity(opacity)}{turn}/>"
+        )
 
     def text(
         self, text: str, area: Area, font: FontUse, size: float, color: str, opacity: float
@@ -391,8 +448,7 @@ class _Frame:
         """The text fitted to its area (measure.fit), its lines centred together;
         `size` is a share of the shorter side. Each line is a paragraph, with its own
         direction."""
-        cx, cy = area.x + area.width / 2, area.y + area.height / 2
-        turn = "" if area.upright else f' transform="rotate(-90 {_n(cx)} {_n(cy)})"'
+        (cx, cy), turn = area.centre, _turn(area)
         # Blank lines would only push the text off-centre.
         lines = [line for line in text.split("\n") if any(visible(c) for c in line)]
         layout = fit(lines, font.measure, area.length, area.depth, size * self.short)

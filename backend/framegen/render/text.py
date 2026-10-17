@@ -193,6 +193,10 @@ class Area:
     upright: bool
 
     @property
+    def centre(self) -> tuple[float, float]:
+        return self.x + self.width / 2, self.y + self.height / 2
+
+    @property
     def length(self) -> float:
         """Room along the line."""
         return self.width if self.upright else self.height

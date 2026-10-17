@@ -116,6 +116,10 @@ Text = Annotated[
 ]
 
 
+MAX_TEXT_SIZE = 0.25
+"""The largest text height, as a share of the frame's shorter side."""
+
+
 class TextStyle(SpecModel):
     font: FontRef
     color: Color
@@ -123,7 +127,7 @@ class TextStyle(SpecModel):
         float,
         Field(
             gt=0,
-            le=0.25,
+            le=MAX_TEXT_SIZE,
             allow_inf_nan=False,
             description="Largest text height, as a share of the frame's shorter side; the "
             "renderer shrinks the text to fit its slot.",
@@ -278,13 +282,15 @@ class MarkSize(SpecModel):
             gt=0,
             le=0.5,
             allow_inf_nan=False,
-            description="Longest side, as a share of the frame's shorter side.",
+            description="As a share of the frame's shorter side: an image's longest side, "
+            "or the largest height of a text stamp from the brand kit (at most 0.25, as for "
+            "any text).",
         ),
     ] = 0.08
 
 
 class BrandKitStamp(StampBase, MarkSize):
-    """The workspace's stamp from its brand kit."""
+    """The workspace's stamp from its brand kit: its text or its image."""
 
     source: Literal["brand-kit"]
 
@@ -299,6 +305,15 @@ class TextStamp(StampBase, TextStyle):
 class ImageStamp(StampBase, MarkSize):
     source: Literal["image"]
     image: str = Field(pattern=r"^ast_[a-z2-7]{26}$")
+
+
+class BrandText(SpecModel):
+    """A brand kit's text stamp (name and phone, for example): the text and how it looks.
+    Its size is set where it is used."""
+
+    text: Text
+    font: FontRef
+    color: Color
 
 
 Stamp = Annotated[BrandKitStamp | TextStamp | ImageStamp, Field(discriminator="source")]
