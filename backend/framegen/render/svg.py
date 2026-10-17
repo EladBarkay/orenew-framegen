@@ -34,7 +34,6 @@ from framegen.render.text import (
     FontFile,
     Fonts,
     FontUse,
-    NoRoom,
     slot_area,
     text_direction,
 )
@@ -433,9 +432,9 @@ class _Frame:
             area.length / image.width,
             area.depth / image.height,
         )
+        # At small sizes (a preview) a thin logo can be under a pixel: it is drawn all the
+        # same, faint, rather than failing the frame. Output checks (T-18) see full sizes.
         w, h = image.width * scale, image.height * scale
-        if w < 1 or h < 1:
-            raise NoRoom(f"a {image.width}x{image.height} stamp has no room in its slot")
         (cx, cy), turn = area.centre, _turn(area)
         return (
             f'<image href={quoteattr(image.href)} x="{_n(cx - w / 2)}" y="{_n(cy - h / 2)}" '

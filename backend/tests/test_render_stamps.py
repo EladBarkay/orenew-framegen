@@ -5,7 +5,6 @@ import re
 import pytest
 
 from framegen.render.svg import MissingBrandStamp, MissingImage, render_svg
-from framegen.render.text import NoRoom
 from framegen.spec.text import BrandText
 from tests.stamps import LOGO, png, spec
 
@@ -76,15 +75,17 @@ def test_a_spec_using_the_brand_kit_needs_its_stamp() -> None:
         render_svg(spec({"source": "brand-kit", "slot": "top-end"}), "portrait", 600, 900)
 
 
-def test_a_stamp_too_thin_for_its_slot_is_an_error() -> None:
-    stamp = {"source": "image", "image": LOGO, "slot": "top-end", "size": 0.5}
-    with pytest.raises(NoRoom):
-        render_svg(spec(stamp), "portrait", 600, 900, images={LOGO: png(4000, 2)})
+def test_a_thin_stamp_in_a_small_preview_is_still_drawn() -> None:
+    stamp = {"source": "image", "image": LOGO, "slot": "bottom-band", "size": 0.08}
+    svg = render_svg(spec(stamp), "portrait", 60, 90, images={LOGO: png(600, 50)})
+    image = image_attributes(svg)
+    assert float(image["height"]) < 1 <= float(image["width"])
 
 
 def test_a_brand_kit_text_stamp_is_no_taller_than_any_text() -> None:
+    # A bottom band 438 deep after its margins: room for more than 0.25 of 600 (150).
+    deep = {"top": 0.1, "bottom": 0.5, "start": 0.1, "end": 0.1}
     stamp = {"source": "brand-kit", "slot": "bottom-band", "size": 0.5}
     brand = BrandText(text="ש", font="heebo", color="#000000")
-    svg = render_svg(spec(stamp), "portrait", 600, 900, brand_stamp=brand)
-    sizes = [float(size) for size in re.findall(r'font-size="([\d.]+)"', svg)]
-    assert sizes and max(sizes) <= 0.25 * 600
+    svg = render_svg(spec(stamp, deep), "portrait", 600, 900, brand_stamp=brand)
+    assert re.findall(r'font-size="([\d.]+)"', svg) == ["150"]

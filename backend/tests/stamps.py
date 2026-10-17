@@ -19,8 +19,8 @@ def png(width: int, height: int, color: str = "#ff0000") -> Image:
     return Image(href, width, height)
 
 
-def spec(stamp: dict[str, Any]) -> Any:
-    inset = {"top": 0.1, "bottom": 0.2, "start": 0.1, "end": 0.1}
+def spec(stamp: dict[str, Any], inset: dict[str, float] | None = None) -> Any:
+    inset = inset or {"top": 0.1, "bottom": 0.2, "start": 0.1, "end": 0.1}
     return read_spec({
         "specVersion": 1, "aspect": {"portrait": "2:3", "landscape": "3:2"},
         "window": {"shape": "rectangle", "portrait": {"inset": inset},

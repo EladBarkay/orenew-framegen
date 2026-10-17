@@ -283,7 +283,8 @@ class MarkSize(SpecModel):
             le=0.5,
             allow_inf_nan=False,
             description="As a share of the frame's shorter side: an image's longest side, "
-            "or the largest height of a text stamp from the brand kit.",
+            "or the largest height of a text stamp from the brand kit (at most 0.25, as for "
+            "any text).",
         ),
     ] = 0.08
 
